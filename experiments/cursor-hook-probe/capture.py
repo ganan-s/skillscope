@@ -6,10 +6,9 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
 
 OUTPUT_PATH = Path(__file__).parent / ".local" / "events.jsonl"
 VALID_EVENT_KINDS = {
@@ -72,7 +71,7 @@ def append_event(event_kind: str, payload: dict[str, Any]) -> None:
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "probe_schema_version": 1,
-        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "captured_at": datetime.now(UTC).isoformat(),
         "event_kind": event_kind,
         "payload": payload,
         "skill_manifest_snapshot": snapshot_skill_manifest(event_kind, payload),
