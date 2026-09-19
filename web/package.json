@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types --test tests/paneLayout.test.ts"
+    "test": "tsx --test tests/paneLayout.test.ts"
   },
   "dependencies": {
     "react": "^19.2.8",
@@ -22,6 +22,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "oxlint": "^1.81.0",
     "tailwindcss": "^4.3.3",
+    "tsx": "^4.21.0",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
   }
