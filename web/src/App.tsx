@@ -40,7 +40,7 @@ export default function App() {
   if (status.kind === "loading") {
     return (
       <div className="flex h-screen items-center justify-center">
-        <p className="text-text-tertiary text-sm tracking-wide">Loading...</p>
+        <p className="text-[13px] text-text-secondary">Loading...</p>
       </div>
     );
   }
@@ -122,8 +122,8 @@ export default function App() {
                 onClose={() => toggle("inspector")}
               />
             ) : (
-              <div className="flex h-full items-center justify-center">
-                <p className="text-sm text-text-tertiary">
+              <div className="flex h-full items-center justify-center p-6">
+                <p className="text-center text-[13px] text-text-secondary">
                   Select a skill activation
                 </p>
               </div>

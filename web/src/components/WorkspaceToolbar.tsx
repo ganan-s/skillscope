@@ -72,9 +72,9 @@ export function WorkspaceToolbar({
   onToggle,
 }: Props) {
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-white px-3">
-      <h1 className="shrink-0 text-sm font-semibold">Skillscope</h1>
-      <div className="min-w-0 flex-1 truncate text-xs text-text-tertiary">
+    <header className="pane-material flex h-11 shrink-0 items-center gap-3 border-b border-border px-3">
+      <h1 className="shrink-0 text-[13px] font-semibold">Skillscope</h1>
+      <div className="min-w-0 flex-1 truncate text-[11px] text-text-secondary">
         {repositoryLabel ?? "No repository"}
         {conversationTitle && ` / ${conversationTitle}`}
       </div>

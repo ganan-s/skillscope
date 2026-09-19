@@ -78,7 +78,11 @@ export function WorkspacePane({
 
   if (collapsed) {
     return (
-      <aside className="pane-material flex w-10 shrink-0 justify-center border-r border-border/80 py-2">
+      <aside
+        className={`pane-material flex w-10 shrink-0 justify-center border-border py-2 ${
+          resizeSide === "left" ? "border-l" : "border-r"
+        }`}
+      >
         <button
           type="button"
           aria-label={`Show ${label}`}
