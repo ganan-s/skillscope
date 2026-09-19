@@ -30,13 +30,13 @@ function clamp(pane: UtilityPane, value: unknown): number {
   return Math.min(max, Math.max(min, value));
 }
 
-export function loadPaneLayout(
-  storage: ReadStorage | undefined =
-    typeof window === "undefined" ? undefined : window.localStorage,
-): PaneLayout {
-  if (!storage) return DEFAULT_PANE_LAYOUT;
+export function loadPaneLayout(storage?: ReadStorage): PaneLayout {
   try {
-    const parsed = JSON.parse(storage.getItem(PANE_LAYOUT_KEY) ?? "");
+    const resolvedStorage =
+      storage ??
+      (typeof window !== "undefined" ? window.localStorage : undefined);
+    if (!resolvedStorage) return DEFAULT_PANE_LAYOUT;
+    const parsed = JSON.parse(resolvedStorage.getItem(PANE_LAYOUT_KEY) ?? "");
     return {
       widths: {
         repositories: clamp("repositories", parsed.widths?.repositories),

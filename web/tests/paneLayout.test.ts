@@ -13,6 +13,30 @@ test("invalid persisted state falls back to defaults", () => {
   assert.deepEqual(loadPaneLayout(storage), DEFAULT_PANE_LAYOUT);
 });
 
+test("unavailable browser storage falls back to defaults", () => {
+  const originalWindow = globalThis.window;
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      get localStorage() {
+        throw new DOMException("The operation is insecure.", "SecurityError");
+      },
+    },
+  });
+  try {
+    assert.deepEqual(loadPaneLayout(), DEFAULT_PANE_LAYOUT);
+  } finally {
+    if (originalWindow === undefined) {
+      Reflect.deleteProperty(globalThis, "window");
+    } else {
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: originalWindow,
+      });
+    }
+  }
+});
+
 test("persisted widths are clamped and booleans are retained", () => {
   const storage = {
     getItem: () =>
