@@ -42,7 +42,7 @@ export function WorkspacePane({
   }, []);
 
   const startResize = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || !event.isPrimary) return;
     event.preventDefault();
     cleanupDragRef.current?.();
 
