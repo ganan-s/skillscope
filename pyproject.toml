@@ -24,8 +24,10 @@ packages = ["src/skillscope"]
 [dependency-groups]
 dev = [
     "httpx>=0.28,<1",
+    "jsonschema>=4,<5",
     "pytest>=8.4,<9",
     "pytest-cov>=6,<8",
+    "pyyaml>=6,<7",
     "ruff>=0.13,<1",
     "testcontainers>=4.13,<5",
 ]

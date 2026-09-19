@@ -36,6 +36,21 @@ from skillscope.storage.connection import (
 
 _SKILL_SOURCES = {"user", "cursor-builtin", "agents", "project", "unknown"}
 _TIME_PROVENANCE = {"native", "collector_observed", "derived", "missing"}
+_CONVERSATION_SELECT = """
+SELECT conversations.*,
+       ended_at IS NULL AS ended_missing,
+       COALESCE(-julianday(ended_at), 0) AS ended_sort,
+       started_at IS NULL AS started_missing,
+       COALESCE(-julianday(started_at), 0) AS started_sort,
+       COALESCE(
+           public_id,
+           harness_id || ':' || native_conversation_id
+       ) AS identity_sort
+FROM conversations
+"""
+_CONVERSATION_ORDER = """
+ORDER BY ended_missing, ended_sort, started_missing, started_sort, identity_sort
+"""
 
 
 def _datetime(value: str | None) -> datetime | None:
@@ -99,10 +114,13 @@ class SQLiteReadRepository:
     def _connect(self) -> sqlite3.Connection:
         if not self._db_path.is_file():
             raise StoreMissingError(str(self._db_path))
+        conn: sqlite3.Connection | None = None
         try:
             conn = connect_readonly(self._db_path)
             version = get_schema_version(conn)
         except (sqlite3.Error, ValueError, TypeError, KeyError) as exc:
+            if conn is not None:
+                conn.close()
             raise StoreError("store cannot be read") from exc
         if version != SUPPORTED_SCHEMA_VERSION:
             conn.close()
@@ -110,34 +128,49 @@ class SQLiteReadRepository:
         return conn
 
     def list_conversations(self, request: PageRequest) -> ConversationPage:
+        cursor_id = (
+            _decode_cursor(request.cursor) if request.cursor is not None else None
+        )
         conn = self._connect()
         try:
+            parameters: tuple[Any, ...] = (request.limit + 1,)
+            where = ""
+            if cursor_id is not None:
+                anchor = self._conversation_row(conn, cursor_id)
+                if anchor is None:
+                    raise InvalidPaginationError("unknown cursor")
+                where = """
+                WHERE (
+                    ended_at IS NULL,
+                    COALESCE(-julianday(ended_at), 0),
+                    started_at IS NULL,
+                    COALESCE(-julianday(started_at), 0),
+                    COALESCE(
+                        public_id,
+                        harness_id || ':' || native_conversation_id
+                    )
+                ) > (?, ?, ?, ?, ?)
+                """
+                parameters = (
+                    anchor["ended_missing"],
+                    anchor["ended_sort"],
+                    anchor["started_missing"],
+                    anchor["started_sort"],
+                    anchor["identity_sort"],
+                    request.limit + 1,
+                )
             rows = conn.execute(
-                "SELECT * FROM conversations "
-                "ORDER BY ended_at IS NULL, ended_at DESC, "
-                "started_at IS NULL, started_at DESC, public_id"
+                _CONVERSATION_SELECT + where + _CONVERSATION_ORDER + " LIMIT ?",
+                parameters,
             ).fetchall()
-            summaries = [self._summary(conn, row) for row in rows]
+            has_more = len(rows) > request.limit
+            summaries = [self._summary(conn, row) for row in rows[: request.limit]]
         except (sqlite3.Error, ValueError, TypeError, KeyError) as exc:
             raise StoreError("store cannot be read") from exc
         finally:
             conn.close()
 
-        start = 0
-        if request.cursor is not None:
-            public_id = _decode_cursor(request.cursor)
-            try:
-                start = next(
-                    index + 1
-                    for index, item in enumerate(summaries)
-                    if item.id == public_id
-                )
-            except StopIteration as exc:
-                raise InvalidPaginationError("unknown cursor") from exc
-
-        selected = summaries[start : start + request.limit + 1]
-        has_more = len(selected) > request.limit
-        items = tuple(selected[: request.limit])
+        items = tuple(summaries)
         next_cursor = _encode_cursor(items[-1].id) if has_more and items else None
         return ConversationPage(
             items=items,
@@ -148,18 +181,7 @@ class SQLiteReadRepository:
     def get_conversation(self, public_id: str) -> ConversationDetail | None:
         conn = self._connect()
         try:
-            row = conn.execute(
-                "SELECT * FROM conversations WHERE public_id = ?",
-                (public_id,),
-            ).fetchone()
-            if row is None:
-                rows = conn.execute(
-                    "SELECT * FROM conversations WHERE public_id IS NULL"
-                ).fetchall()
-                row = next(
-                    (item for item in rows if _public_id(item) == public_id),
-                    None,
-                )
+            row = self._conversation_row(conn, public_id)
             if row is None:
                 return None
             summary = self._summary(conn, row)
@@ -171,7 +193,7 @@ class SQLiteReadRepository:
                 tasks=tasks,
                 skill_activations=activations,
             )
-        except sqlite3.Error as exc:
+        except (sqlite3.Error, ValueError, TypeError, KeyError) as exc:
             raise StoreError("store cannot be read") from exc
         finally:
             conn.close()
@@ -209,6 +231,25 @@ class SQLiteReadRepository:
             last_successful_ingest_at=last_ingest,
             last_ingest_summary=summary,
             harnesses=harnesses,
+        )
+
+    @staticmethod
+    def _conversation_row(
+        conn: sqlite3.Connection,
+        public_id: str,
+    ) -> sqlite3.Row | None:
+        row = conn.execute(
+            _CONVERSATION_SELECT + " WHERE public_id = ?",
+            (public_id,),
+        ).fetchone()
+        if row is not None:
+            return row
+        legacy_rows = conn.execute(
+            _CONVERSATION_SELECT + " WHERE public_id IS NULL"
+        ).fetchall()
+        return next(
+            (item for item in legacy_rows if _public_id(item) == public_id),
+            None,
         )
 
     def _summary(

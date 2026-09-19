@@ -10,13 +10,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from skillscope.application.ports import ConversationRef, DiscoveryContext, Platform
 from skillscope.domain.models import (
     ConversationSnapshot,
     EligibilityVerdict,
     IngestEligibility,
     ReadinessBasis,
 )
-from skillscope.plugins.base import ConversationRef, DiscoveryContext, Platform
 from skillscope.plugins.cursor.parser import build_conversation_snapshot
 
 
