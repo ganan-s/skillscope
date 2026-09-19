@@ -25,7 +25,11 @@ from skillscope.storage.connection import (
     connect_writable,
     migrate,
 )
-from skillscope.storage.repositories import UpsertResult, upsert_conversation
+from skillscope.storage.repositories import (
+    RevisionConflictError,
+    UpsertResult,
+    upsert_conversation,
+)
 
 
 def _ts(hour=12):
@@ -149,6 +153,20 @@ class TestUpsert(unittest.TestCase):
 
             rows = conn.execute("SELECT source_revision FROM conversations").fetchall()
             self.assertEqual(rows[0]["source_revision"], "rev-2")
+            conn.close()
+
+    def test_rejects_changed_revision_with_same_timestamp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = self._setup_db(tmp)
+            upsert_conversation(conn, _make_snapshot(revision="rev-1", hour=12))
+            conn.commit()
+
+            with self.assertRaises(RevisionConflictError):
+                upsert_conversation(
+                    conn,
+                    _make_snapshot(revision="rev-2", hour=12),
+                )
+
             conn.close()
 
     def test_continuation_replaces_children(self):

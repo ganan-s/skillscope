@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 import enum
+import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -95,6 +96,26 @@ class PayloadSnapshot:
     byte_length: int | None = None
     unavailable_reason: str | None = None
 
+    def __post_init__(self) -> None:
+        if self.status == PayloadStatus.CAPTURED:
+            if self.content is None or self.sha256 is None:
+                raise ValueError("captured payload requires content and sha256")
+            encoded = self.content.encode()
+            if self.byte_length != len(encoded):
+                raise ValueError("captured payload byte length does not match content")
+            if self.sha256 != hashlib.sha256(encoded).hexdigest():
+                raise ValueError("captured payload hash does not match content")
+            if self.unavailable_reason is not None:
+                raise ValueError("captured payload cannot have an unavailable reason")
+        elif (
+            self.content is not None
+            or self.sha256 is not None
+            or not self.unavailable_reason
+        ):
+            raise ValueError(
+                "unavailable payload requires a reason and cannot contain content"
+            )
+
 
 @dataclass(frozen=True)
 class Diagnostic:
@@ -157,6 +178,18 @@ class SourceRevision:
     revision: str
     updated_at: datetime
 
+    def __post_init__(self) -> None:
+        if not self.revision:
+            raise ValueError("source revision is required")
+        if self.updated_at.tzinfo is None:
+            raise ValueError("source revision timestamp must be timezone-aware")
+
+
+def public_conversation_id(harness_id: str, native_conversation_id: str) -> str:
+    """Return a deterministic opaque identifier for a harness conversation."""
+    identity = f"{harness_id}\0{native_conversation_id}".encode()
+    return f"conv_{hashlib.sha256(identity).hexdigest()[:24]}"
+
 
 @dataclass(frozen=True)
 class ConversationSnapshot:
@@ -172,11 +205,87 @@ class ConversationSnapshot:
     started_at: datetime | None = None
     ended_at: datetime | None = None
 
+    @property
+    def public_id(self) -> str:
+        return public_conversation_id(
+            self.harness_id,
+            self.native_conversation_id,
+        )
+
+    def __post_init__(self) -> None:
+        if self.contract_version != CONTRACT_VERSION:
+            raise ValueError("unsupported canonical contract version")
+        if not self.harness_id or not self.native_conversation_id:
+            raise ValueError("conversation identity is required")
+
+        event_ids: set[str] = set()
+        sequences: set[int] = set()
+        activations: dict[str, tuple[int, str]] = {}
+        previous_sequence = -1
+        for event in self.events:
+            if (
+                event.harness_id != self.harness_id
+                or event.native_conversation_id != self.native_conversation_id
+            ):
+                raise ValueError("event belongs to another conversation")
+            if event.event_id in event_ids:
+                raise ValueError("event ids must be unique within a snapshot")
+            if event.sequence in sequences or event.sequence <= previous_sequence:
+                raise ValueError("event sequences must be unique and strictly ordered")
+            if event.turn_index is not None and event.turn_index < 0:
+                raise ValueError("turn index cannot be negative")
+            event_ids.add(event.event_id)
+            sequences.add(event.sequence)
+            previous_sequence = event.sequence
+            if event.event_type == EventType.SKILL_ACTIVATED:
+                path = event.payload.get("path")
+                if (
+                    event.evidence.quality != EvidenceQuality.CONFIRMED
+                    or not isinstance(path, str)
+                    or path.replace("\\", "/").split("/")[-1] != "SKILL.md"
+                    or any(character in path for character in "*?[")
+                ):
+                    raise ValueError(
+                        "activation requires confirmed evidence for exact SKILL.md"
+                    )
+                activations[event.event_id] = (event.sequence, path)
+            elif event.event_type == EventType.SKILL_RESOURCE_READ:
+                parent_id = event.payload.get("parent_activation_id")
+                if (
+                    not isinstance(parent_id, str)
+                    or parent_id not in activations
+                    or activations[parent_id][0] >= event.sequence
+                ):
+                    raise ValueError(
+                        "resource read must reference an earlier activation"
+                    )
+                resource_path = event.payload.get("path")
+                activation_path = activations[parent_id][1].replace("\\", "/")
+                skill_directory = activation_path.rsplit("/", maxsplit=1)[0]
+                if not isinstance(resource_path, str) or not resource_path.replace(
+                    "\\", "/"
+                ).startswith(skill_directory + "/"):
+                    raise ValueError("resource read must belong to its parent skill")
+            if event.event_type in {
+                EventType.SKILL_ACTIVATED,
+                EventType.SKILL_RESOURCE_READ,
+            }:
+                payload = event.payload.get("payload_snapshot")
+                if isinstance(payload, dict):
+                    PayloadSnapshot(
+                        status=PayloadStatus(payload.get("status")),
+                        content=payload.get("content"),
+                        sha256=payload.get("sha256"),
+                        byte_length=payload.get("byte_length"),
+                        unavailable_reason=payload.get("unavailable_reason"),
+                    )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "contract_version": self.contract_version,
             "harness_id": self.harness_id,
             "native_conversation_id": self.native_conversation_id,
+            "public_id": self.public_id,
             "source_revision": {
                 "revision": self.source_revision.revision,
                 "updated_at": self.source_revision.updated_at.isoformat(),

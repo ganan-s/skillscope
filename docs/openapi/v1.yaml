@@ -678,8 +678,8 @@ components:
     PopulatedStoreMetadata:
       value:
         api_version: v1
-        schema_version: 1
-        supported_schema_version: 1
+        schema_version: 2
+        supported_schema_version: 2
         last_successful_ingest_at: "2026-09-18T14:20:00Z"
         last_ingest_summary:
           inserted: 1

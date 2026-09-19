@@ -326,6 +326,63 @@ class TestOfflineReadIsNotActivation(unittest.TestCase):
         self.assertEqual(len(unknown_diags), 1)
 
 
+class TestResourceReads(unittest.TestCase):
+    def test_confirmed_resource_after_activation_is_nested_by_parent_id(self):
+        manifest = _skill_read_success(
+            tool_use_id="activation-1",
+            path="/s/SKILL.md",
+        )
+        content = "Reference content"
+        resource = _skill_read_success(
+            tool_use_id="resource-1",
+            path="/s/reference.md",
+            content=content,
+        )
+        resource["skill_manifest_snapshot"] = None
+        resource["resource_snapshot"] = {
+            "status": "captured",
+            "path": "/s/reference.md",
+            "content": content,
+            "byte_length": len(content.encode()),
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            spool = _write_spool(tmp, [manifest, resource])
+            snapshot, _ = build_conversation_snapshot("conv-c", None, spool)
+
+        reads = [
+            event
+            for event in snapshot.events
+            if event.event_type == EventType.SKILL_RESOURCE_READ
+        ]
+        self.assertEqual(len(reads), 1)
+        self.assertEqual(reads[0].payload["parent_activation_id"], "activation-1")
+        self.assertEqual(
+            reads[0].payload["payload_snapshot"]["content"],
+            content,
+        )
+
+    def test_resource_before_activation_is_not_emitted(self):
+        resource = _skill_read_success(
+            tool_use_id="resource-1",
+            path="/s/reference.md",
+        )
+        resource["skill_manifest_snapshot"] = None
+        manifest = _skill_read_success(
+            tool_use_id="activation-1",
+            path="/s/SKILL.md",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            spool = _write_spool(tmp, [resource, manifest])
+            snapshot, _ = build_conversation_snapshot("conv-c", None, spool)
+
+        reads = [
+            event
+            for event in snapshot.events
+            if event.event_type == EventType.SKILL_RESOURCE_READ
+        ]
+        self.assertEqual(reads, [])
+
+
 class TestFrontmatter(unittest.TestCase):
     def test_valid_frontmatter(self):
         fm = parse_frontmatter("---\nname: auth\ndescription: Auth skill\n---\nbody")

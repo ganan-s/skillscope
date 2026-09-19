@@ -136,6 +136,21 @@ class TestBuildRecord(unittest.TestCase):
         rec = build_record("session_ended", {"conversation_id": "c1"})
         self.assertIsNone(rec["skill_manifest_snapshot"])
 
+    def test_successful_resource_read_captures_resource_payload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            resource = Path(directory) / "reference.md"
+            resource.write_text("Reference")
+            rec = build_record(
+                "read_succeeded",
+                {
+                    "conversation_id": "c1",
+                    "tool_name": "Read",
+                    "tool_input": {"file_path": str(resource)},
+                },
+            )
+
+        self.assertEqual(rec["resource_snapshot"]["content"], "Reference")
+
 
 class TestAppendToSpool(unittest.TestCase):
     def test_appends_jsonl(self):

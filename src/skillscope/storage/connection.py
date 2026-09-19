@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 
 _SQL_DIR = Path(__file__).parent / "sql"
-SUPPORTED_SCHEMA_VERSION = 1
+SUPPORTED_SCHEMA_VERSION = 2
 
 
 def _migration_files() -> list[Path]:
@@ -27,7 +27,7 @@ def connect_writable(db_path: Path) -> sqlite3.Connection:
 
 def connect_readonly(db_path: Path) -> sqlite3.Connection:
     """Open a read-only connection."""
-    uri = f"file:{db_path}?mode=ro"
+    uri = f"{db_path.resolve().as_uri()}?mode=ro"
     conn = sqlite3.connect(uri, uri=True, timeout=10)
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=5000")
@@ -50,10 +50,17 @@ def migrate(conn: sqlite3.Connection) -> int:
     Idempotent: skips already-applied migrations.
     """
     current = get_schema_version(conn)
-    if current is not None and current >= SUPPORTED_SCHEMA_VERSION:
+    if current is not None and current > SUPPORTED_SCHEMA_VERSION:
+        raise RuntimeError(
+            f"store schema {current} is newer than supported {SUPPORTED_SCHEMA_VERSION}"
+        )
+    if current == SUPPORTED_SCHEMA_VERSION:
         return current
 
     for mig_file in _migration_files():
+        migration_version = int(mig_file.name.split("_", maxsplit=1)[0])
+        if current is not None and migration_version <= current:
+            continue
         sql = mig_file.read_text(encoding="utf-8")
         conn.executescript(sql)
 
