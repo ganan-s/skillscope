@@ -31,7 +31,8 @@ Most importantly:
 For Cursor v1, that confirmation comes from `postToolUse`. An offline transcript
 `Read` request by itself is not an activation because Cursor's stored JSONL
 omits the tool result. A failed read is otherwise indistinguishable from a
-successful read.
+successful read. Operators enable hooks and run ingest as described in
+[hooks and running ingest](07-hooks-and-dev-ingest.md).
 
 ## Why snapshots contain events
 

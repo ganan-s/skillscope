@@ -3,33 +3,33 @@
   "hooks": {
     "sessionStart": [
       {
-        "command": "python3 -m skillscope.plugins.cursor.collector session_started",
+        "command": "python3 examples/cursor/run_collector.py session_started",
         "timeout": 5
       }
     ],
     "beforeSubmitPrompt": [
       {
-        "command": "python3 -m skillscope.plugins.cursor.collector task_submitted",
+        "command": "python3 examples/cursor/run_collector.py task_submitted",
         "timeout": 5
       }
     ],
     "postToolUse": [
       {
-        "command": "python3 -m skillscope.plugins.cursor.collector read_succeeded",
+        "command": "python3 examples/cursor/run_collector.py read_succeeded",
         "matcher": "^(Read|ReadFile)$",
         "timeout": 5
       }
     ],
     "postToolUseFailure": [
       {
-        "command": "python3 -m skillscope.plugins.cursor.collector read_failed",
+        "command": "python3 examples/cursor/run_collector.py read_failed",
         "matcher": "^(Read|ReadFile)$",
         "timeout": 5
       }
     ],
     "sessionEnd": [
       {
-        "command": "python3 -m skillscope.plugins.cursor.collector session_ended",
+        "command": "python3 examples/cursor/run_collector.py session_ended",
         "timeout": 5
       }
     ]
