@@ -1,4 +1,4 @@
-import type { PointerEvent, ReactNode } from "react";
+import { useEffect, useRef, type PointerEvent, type ReactNode } from "react";
 import { PANE_LIMITS, type UtilityPane } from "../layout/paneLayout";
 
 interface Props {
@@ -27,19 +27,53 @@ export function WorkspacePane({
   const limits = PANE_LIMITS[pane];
   const direction = resizeSide === "right" ? 1 : -1;
 
+  const onResizeRef = useRef(onResize);
+  const cleanupDragRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    onResizeRef.current = onResize;
+  }, [onResize]);
+
+  useEffect(() => {
+    return () => {
+      cleanupDragRef.current?.();
+      cleanupDragRef.current = null;
+    };
+  }, []);
+
   const startResize = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
     event.preventDefault();
+    cleanupDragRef.current?.();
+
+    const pointerId = event.pointerId;
     const startX = event.clientX;
     const startWidth = width;
+    const dir = direction;
+
     const move = (next: globalThis.PointerEvent) => {
-      onResize(startWidth + (next.clientX - startX) * direction);
+      if (next.pointerId !== pointerId) return;
+      onResizeRef.current(startWidth + (next.clientX - startX) * dir);
     };
-    const stop = () => {
+
+    const stop = (next: globalThis.PointerEvent) => {
+      if (next.pointerId !== pointerId) return;
+      cleanup();
+    };
+
+    const cleanup = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      if (cleanupDragRef.current === cleanup) {
+        cleanupDragRef.current = null;
+      }
     };
+
+    cleanupDragRef.current = cleanup;
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
   };
 
   if (collapsed) {
