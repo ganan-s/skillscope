@@ -121,11 +121,27 @@ def _path(payload: dict[str, Any]) -> str | None:
 
 
 def _task_text(content: object) -> str | None:
+    if isinstance(content, list):
+        parts = [
+            item["text"]
+            for item in content
+            if isinstance(item, dict)
+            and item.get("type") == "text"
+            and isinstance(item.get("text"), str)
+        ]
+        content = "\n".join(parts)
     if not isinstance(content, str):
         return None
     match = _USER_QUERY.search(content)
     text = (match.group(1) if match else content).strip()
     return text or None
+
+
+def _message_content(record: dict[str, Any]) -> object:
+    message = record.get("message")
+    if isinstance(message, dict) and "content" in message:
+        return message["content"]
+    return record.get("content")
 
 
 def _scalar(value: str) -> str | None:
@@ -316,10 +332,10 @@ def build_conversation_snapshot(
         payload = record.value["payload"]
         tool_input = payload.get("tool_input")
         text = tool_input.get("input") if isinstance(tool_input, dict) else None
-        if record.value.get("event_kind") == "task_submitted" and isinstance(text, str):
+        if record.value.get("event_kind") == "task_submitted":
             hook_tasks.append(
                 {
-                    "text": text.strip(),
+                    "text": text.strip() if isinstance(text, str) else None,
                     "generation": payload.get("generation_id"),
                     "record": record,
                 }
@@ -329,7 +345,7 @@ def build_conversation_snapshot(
     for record in transcripts:
         if record.value.get("role") != "user":
             continue
-        text = _task_text(record.value.get("content"))
+        text = _task_text(_message_content(record.value))
         if text is None:
             continue
         match = next(
@@ -341,12 +357,23 @@ def build_conversation_snapshot(
             None,
         )
         if match is None:
+            match = next(
+                (
+                    i
+                    for i, task in enumerate(hook_tasks)
+                    if i not in used and task["text"] is None
+                ),
+                None,
+            )
+        if match is None:
             tasks.append({"text": text, "record": record})
         else:
             used.add(match)
-            tasks.append({**hook_tasks[match], "hook": True})
+            tasks.append({**hook_tasks[match], "text": text, "hook": True})
     tasks.extend(
-        {**task, "hook": True} for i, task in enumerate(hook_tasks) if i not in used
+        {**task, "hook": True}
+        for i, task in enumerate(hook_tasks)
+        if i not in used and task["text"] is not None
     )
     for index, task in enumerate(tasks):
         task["turn"] = index
@@ -524,7 +551,7 @@ def build_conversation_snapshot(
             )
 
     for record in transcripts:
-        content = record.value.get("content")
+        content = _message_content(record.value)
         if record.value.get("role") != "assistant" or not isinstance(content, list):
             continue
         for item in content:

@@ -48,7 +48,11 @@ def _transcript_root(context: DiscoveryContext) -> Path:
 
 
 def _spool_path(context: DiscoveryContext) -> Path:
-    return context.spool_override or context.user_data / "cursor-hooks.jsonl"
+    if context.spool_override:
+        return context.spool_override
+    from skillscope.config import default_spool_path
+
+    return context.user_data / default_spool_path().name
 
 
 def _transcript_candidates(root: Path) -> dict[str, Path]:
@@ -61,6 +65,8 @@ def _transcript_candidates(root: Path) -> dict[str, Path]:
         if not transcript.is_file():
             continue
         conversation_id = transcript.stem
+        if transcript.parent.name != conversation_id:
+            continue
         existing = candidates.get(conversation_id)
         if existing is None or (
             existing != transcript.parent and transcript.parent.name == conversation_id
@@ -190,7 +196,19 @@ class CursorPlugin:
                     EligibilityVerdict.REJECT,
                     reason="Transcript metadata is unavailable.",
                 )
-        if records and spool.is_file():
+        hook_times: list[float] = []
+        for record in records:
+            captured_at = record.get("captured_at")
+            if not isinstance(captured_at, str):
+                continue
+            with suppress(ValueError):
+                captured = datetime.fromisoformat(captured_at.replace("Z", "+00:00"))
+                if captured.tzinfo is None:
+                    captured = captured.replace(tzinfo=UTC)
+                hook_times.append(captured.timestamp())
+        if hook_times:
+            mtimes.extend(hook_times)
+        elif records and spool.is_file():
             with suppress(OSError):
                 mtimes.append(spool.stat().st_mtime)
         if not mtimes:
