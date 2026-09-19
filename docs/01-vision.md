@@ -18,7 +18,8 @@ The main entrypoint is a **localhost conversation list**. Drill-down is **one th
 
 Display is fed only by data written at ingest time. If the project was deleted, the skill was edited, or the machine layout changed, the dashboard still shows what was loaded then.
 
-Default project name: **skillscope**. Local only: Python, SQLite, a small web UI.
+Default project name: **skillscope**. Local only: a Python backend, SQLite, a
+read-only REST API, and a separately built frontend.
 
 | Command | Role |
 |---|---|
@@ -29,7 +30,11 @@ No cloud. Conversation transcripts and skill snapshots stay on the machine.
 
 ### Visualization is a localhost web app
 
-v1’s dashboard is `skillscope serve`: two HTML screens in a browser, bound to localhost, backed only by SQLite. Running serve and opening that URL **is** the product. It is not a gap to fill with an in-editor panel.
+v1’s dashboard is `skillscope serve`: a read-only REST API and a bundled
+frontend, served together on localhost and backed only by SQLite. The frontend
+framework is a separate decision and does not change the backend boundary.
+Running serve and opening that URL **is** the product. It is not a gap to fill
+with an in-editor panel.
 
 It is **not**:
 
@@ -53,6 +58,7 @@ A closed thread with **zero** unambiguous skill loads still appears, labeled **N
 Out of scope until a later doc:
 
 - Open or in-flight sessions
+- A resident background ingest worker or live transcript watcher
 - Aggregates, critique, write-back, or hooks
 - Additional harness plugins beyond Cursor
 - Re-reading skill files or repos when serving the UI
@@ -109,6 +115,8 @@ flowchart LR
   parse[Unambiguous SKILL.md parser]
   db[(Snapshot SQLite)]
   serve[skillscope serve]
+  api[Read-only REST API]
+  web[Bundled frontend]
   list[Conversation list]
   detail[Thread: skills loaded]
   osDetect --> plugin
@@ -116,7 +124,10 @@ flowchart LR
   closed --> parse
   parse --> db
   db --> serve
-  serve --> list
+  serve --> api
+  serve --> web
+  api --> web
+  web --> list
   list --> detail
 ```
 
@@ -124,7 +135,8 @@ flowchart LR
 2. The plugin yields **closed** sessions only.
 3. The parser emits canonical events and denormalized snapshots.
 4. SQLite holds those snapshots.
-5. `skillscope serve` reads only that store and renders the two localhost screens.
+5. `skillscope serve` reads only that store, exposes the read-only API, and
+   hosts the built frontend that renders the two localhost screens.
 
 ## Canonical events
 
@@ -157,4 +169,4 @@ This file is the product vision. Follow-on docs should cover, without expanding 
 
 - Harness plugin contract (Cursor: OS roots, closed-session rule, parser)
 - Snapshot schema
-- The two-screen localhost dashboard bound only to the store
+- The frontend implementation for the two-screen localhost dashboard
