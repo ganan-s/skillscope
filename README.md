@@ -9,6 +9,7 @@ The project is under active development. See:
 - [`docs/02-backend-architecture.md`](docs/02-backend-architecture.md)
 - [`docs/03-ingestion-contract.md`](docs/03-ingestion-contract.md)
 - [`docs/05-api-resource-design.md`](docs/05-api-resource-design.md)
+- [`docs/openapi/v1.yaml`](docs/openapi/v1.yaml)
 
 ## Development
 
