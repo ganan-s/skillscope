@@ -1,0 +1,691 @@
+openapi: 3.1.0
+info:
+  title: Skillscope API
+  version: 1.0.0
+  summary: Read-only access to ingested conversation and skill snapshots.
+  description: |
+    The Skillscope API serves immutable historical projections from the local
+    snapshot store. It never discovers transcripts or reads workspaces and skill
+    files at request time.
+servers:
+  - url: http://127.0.0.1:8000
+    description: Default local Skillscope server
+tags:
+  - name: Conversations
+    description: Stored conversation summaries and details.
+  - name: Metadata
+    description: API and snapshot-store compatibility metadata.
+paths:
+  /api/v1/conversations:
+    get:
+      operationId: listConversations
+      summary: List conversations
+      description: |
+        Returns stored conversation summaries in descending chronological
+        order. The opaque cursor provides keyset pagination. Results are not a
+        transactionally frozen view across pages when ingest replaces a
+        conversation concurrently.
+      tags:
+        - Conversations
+      parameters:
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageLimit"
+      responses:
+        "200":
+          description: A page of conversation summaries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationPage"
+              examples:
+                withSkills:
+                  $ref: "#/components/examples/ConversationPageWithSkills"
+                noSkills:
+                  $ref: "#/components/examples/ConversationPageWithoutSkills"
+        "400":
+          $ref: "#/components/responses/InvalidPagination"
+        "503":
+          $ref: "#/components/responses/StoreUnavailable"
+  /api/v1/conversations/{conversation_id}:
+    get:
+      operationId: getConversation
+      summary: Get a conversation
+      description: |
+        Returns one complete stored conversation projection. No response field
+        is populated from the live filesystem.
+      tags:
+        - Conversations
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      responses:
+        "200":
+          description: Conversation detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+              examples:
+                capturedSkill:
+                  $ref: "#/components/examples/ConversationWithCapturedSkill"
+        "404":
+          $ref: "#/components/responses/ConversationNotFound"
+        "503":
+          $ref: "#/components/responses/StoreUnavailable"
+  /api/v1/meta:
+    get:
+      operationId: getStoreMetadata
+      summary: Get API and store metadata
+      description: |
+        Returns compatibility and last-ingest metadata. This is not a general
+        health or administration endpoint.
+      tags:
+        - Metadata
+      responses:
+        "200":
+          description: API and snapshot-store metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreMetadata"
+              examples:
+                populated:
+                  $ref: "#/components/examples/PopulatedStoreMetadata"
+        "503":
+          $ref: "#/components/responses/StoreUnavailable"
+components:
+  parameters:
+    ConversationId:
+      name: conversation_id
+      in: path
+      required: true
+      description: Opaque public conversation identifier.
+      schema:
+        type: string
+        minLength: 1
+      example: conv_01J8Y4K2R6Q3
+    PageCursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque continuation cursor returned by the previous page.
+      schema:
+        type: string
+        minLength: 1
+    PageLimit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of conversations to return.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+  responses:
+    InvalidPagination:
+      description: Pagination parameters are invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            code: invalid_pagination
+            message: The pagination parameters are invalid.
+            details: null
+    ConversationNotFound:
+      description: No conversation has the requested public id.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            code: conversation_not_found
+            message: Conversation not found.
+            details: null
+    StoreUnavailable:
+      description: The snapshot store cannot currently be read.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            missing:
+              value:
+                code: store_missing
+                message: The Skillscope snapshot store does not exist.
+                details: null
+            incompatible:
+              value:
+                code: store_incompatible
+                message: The Skillscope snapshot store is incompatible.
+                details: null
+            unreadable:
+              value:
+                code: store_unreadable
+                message: The Skillscope snapshot store cannot be read.
+                details: null
+  schemas:
+    ConversationPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - next_cursor
+        - limit
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationSummary"
+        next_cursor:
+          description: Opaque cursor for the next page, or null on the final page.
+          anyOf:
+            - type: string
+              minLength: 1
+            - type: "null"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+    ConversationSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - harness
+        - workspace_paths
+        - started_at
+        - ended_at
+        - skills
+        - task_count
+        - activation_count
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Opaque stable public conversation id.
+        title:
+          description: Stored conversation title, or null when unavailable.
+          anyOf:
+            - type: string
+            - type: "null"
+        harness:
+          type: string
+          minLength: 1
+          description: Stable harness id.
+          examples:
+            - cursor
+        workspace_paths:
+          type: array
+          description: Historical workspace path strings.
+          items:
+            type: string
+        started_at:
+          $ref: "#/components/schemas/NullableTimestamp"
+        ended_at:
+          $ref: "#/components/schemas/NullableTimestamp"
+        skills:
+          type: array
+          description: |
+            Skill-chip summaries in first-activation order. An empty array means
+            that no skills were loaded.
+          items:
+            $ref: "#/components/schemas/SkillSummary"
+        task_count:
+          type: integer
+          minimum: 0
+        activation_count:
+          type: integer
+          minimum: 0
+    Conversation:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - harness
+        - workspace_paths
+        - started_at
+        - ended_at
+        - skills
+        - task_count
+        - activation_count
+        - tasks
+        - skill_activations
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Opaque stable public conversation id.
+        title:
+          description: Stored conversation title, or null when unavailable.
+          anyOf:
+            - type: string
+            - type: "null"
+        harness:
+          type: string
+          minLength: 1
+          description: Stable harness id.
+        workspace_paths:
+          type: array
+          description: Historical workspace path strings.
+          items:
+            type: string
+        started_at:
+          $ref: "#/components/schemas/NullableTimestamp"
+        ended_at:
+          $ref: "#/components/schemas/NullableTimestamp"
+        skills:
+          type: array
+          description: Skill-chip summaries in first-activation order.
+          items:
+            $ref: "#/components/schemas/SkillSummary"
+        task_count:
+          type: integer
+          minimum: 0
+        activation_count:
+          type: integer
+          minimum: 0
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+        skill_activations:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillActivation"
+    SkillSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - path
+        - source
+        - activation_count
+      properties:
+        name:
+          description: Captured frontmatter name, or null when unavailable.
+          anyOf:
+            - type: string
+            - type: "null"
+        path:
+          type: string
+          minLength: 1
+          description: Historical manifest path.
+        source:
+          $ref: "#/components/schemas/SkillSource"
+        activation_count:
+          type: integer
+          minimum: 1
+    Task:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - turn_index
+        - text
+        - submitted_at
+        - time_provenance
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Stable task id within the conversation.
+        turn_index:
+          type: integer
+          minimum: 0
+        text:
+          type: string
+        submitted_at:
+          $ref: "#/components/schemas/NullableTimestamp"
+        time_provenance:
+          $ref: "#/components/schemas/TimeProvenance"
+    SkillActivation:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - task_id
+        - turn_index
+        - sequence
+        - activated_at
+        - time_provenance
+        - path
+        - source
+        - name
+        - description
+        - payload
+        - resource_reads
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Repeat-safe activation occurrence id.
+        task_id:
+          description: Related task id, or null when no task can be identified.
+          anyOf:
+            - type: string
+              minLength: 1
+            - type: "null"
+        turn_index:
+          description: Canonical turn index, or null when unavailable.
+          anyOf:
+            - type: integer
+              minimum: 0
+            - type: "null"
+        sequence:
+          type: integer
+          minimum: 0
+          description: Total event order within the conversation snapshot.
+        activated_at:
+          $ref: "#/components/schemas/NullableTimestamp"
+        time_provenance:
+          $ref: "#/components/schemas/TimeProvenance"
+        path:
+          type: string
+          minLength: 1
+          description: Historical concrete SKILL.md path.
+        source:
+          $ref: "#/components/schemas/SkillSource"
+        name:
+          description: Captured frontmatter name, or null when unavailable.
+          anyOf:
+            - type: string
+            - type: "null"
+        description:
+          description: Captured frontmatter description, or null when unavailable.
+          anyOf:
+            - type: string
+            - type: "null"
+        payload:
+          $ref: "#/components/schemas/Payload"
+        resource_reads:
+          type: array
+          description: Resource reads associated with this activation.
+          items:
+            $ref: "#/components/schemas/SkillResourceRead"
+    SkillResourceRead:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - path
+        - sequence
+        - read_at
+        - time_provenance
+        - payload
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Stable resource-read id.
+        path:
+          type: string
+          minLength: 1
+          description: Historical concrete resource path.
+        sequence:
+          type: integer
+          minimum: 0
+          description: Total event order within the conversation snapshot.
+        read_at:
+          $ref: "#/components/schemas/NullableTimestamp"
+        time_provenance:
+          $ref: "#/components/schemas/TimeProvenance"
+        payload:
+          $ref: "#/components/schemas/Payload"
+    Payload:
+      description: Captured post-read content or an explicit unavailable state.
+      oneOf:
+        - $ref: "#/components/schemas/CapturedPayload"
+        - $ref: "#/components/schemas/UnavailablePayload"
+      discriminator:
+        propertyName: status
+        mapping:
+          captured: "#/components/schemas/CapturedPayload"
+          unavailable: "#/components/schemas/UnavailablePayload"
+    CapturedPayload:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - content
+        - sha256
+        - byte_length
+        - unavailable_reason
+      properties:
+        status:
+          type: string
+          const: captured
+        content:
+          type: string
+          description: UTF-8 content captured immediately after the confirmed read.
+        sha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        byte_length:
+          type: integer
+          minimum: 0
+        unavailable_reason:
+          type: "null"
+    UnavailablePayload:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - content
+        - sha256
+        - byte_length
+        - unavailable_reason
+      properties:
+        status:
+          type: string
+          const: unavailable
+        content:
+          type: "null"
+        sha256:
+          type: "null"
+        byte_length:
+          description: Known native byte length, or null when unavailable.
+          anyOf:
+            - type: integer
+              minimum: 0
+            - type: "null"
+        unavailable_reason:
+          type: string
+          minLength: 1
+    StoreMetadata:
+      type: object
+      additionalProperties: false
+      required:
+        - api_version
+        - schema_version
+        - supported_schema_version
+        - last_successful_ingest_at
+        - last_ingest_summary
+        - harnesses
+      properties:
+        api_version:
+          type: string
+          const: v1
+        schema_version:
+          type: integer
+          minimum: 1
+        supported_schema_version:
+          type: integer
+          minimum: 1
+        last_successful_ingest_at:
+          $ref: "#/components/schemas/NullableTimestamp"
+        last_ingest_summary:
+          anyOf:
+            - $ref: "#/components/schemas/IngestSummary"
+            - type: "null"
+        harnesses:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          uniqueItems: true
+    IngestSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - inserted
+        - updated
+        - unchanged
+        - skipped
+        - failed
+      properties:
+        inserted:
+          type: integer
+          minimum: 0
+        updated:
+          type: integer
+          minimum: 0
+        unchanged:
+          type: integer
+          minimum: 0
+        skipped:
+          type: integer
+          minimum: 0
+        failed:
+          type: integer
+          minimum: 0
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+        - details
+      properties:
+        code:
+          type: string
+          enum:
+            - conversation_not_found
+            - invalid_pagination
+            - store_missing
+            - store_incompatible
+            - store_unreadable
+        message:
+          type: string
+          minLength: 1
+        details:
+          description: Safe structured details, or null when none are available.
+          anyOf:
+            - type: object
+              additionalProperties: true
+            - type: "null"
+    SkillSource:
+      type: string
+      enum:
+        - user
+        - cursor-builtin
+        - agents
+        - project
+        - unknown
+    TimeProvenance:
+      type: string
+      enum:
+        - native
+        - collector_observed
+        - derived
+        - missing
+    NullableTimestamp:
+      description: ISO 8601 UTC timestamp, or null when unavailable.
+      anyOf:
+        - type: string
+          format: date-time
+        - type: "null"
+  examples:
+    ConversationPageWithSkills:
+      value:
+        items:
+          - id: conv_01J8Y4K2R6Q3
+            title: Review ingestion architecture
+            harness: cursor
+            workspace_paths:
+              - /home/example/project
+            started_at: "2026-09-18T14:00:00Z"
+            ended_at: "2026-09-18T14:18:00Z"
+            skills:
+              - name: backend-hexagonal-architecture
+                path: /home/example/project/.cursor/skills/backend-hexagonal-architecture/SKILL.md
+                source: project
+                activation_count: 2
+            task_count: 2
+            activation_count: 2
+        next_cursor: null
+        limit: 50
+    ConversationPageWithoutSkills:
+      value:
+        items:
+          - id: conv_01J8Y5M7T9A4
+            title: null
+            harness: cursor
+            workspace_paths: []
+            started_at: null
+            ended_at: null
+            skills: []
+            task_count: 1
+            activation_count: 0
+        next_cursor: null
+        limit: 50
+    ConversationWithCapturedSkill:
+      value:
+        id: conv_01J8Y4K2R6Q3
+        title: Review ingestion architecture
+        harness: cursor
+        workspace_paths:
+          - /home/example/project
+        started_at: "2026-09-18T14:00:00Z"
+        ended_at: "2026-09-18T14:18:00Z"
+        skills:
+          - name: backend-hexagonal-architecture
+            path: /home/example/project/.cursor/skills/backend-hexagonal-architecture/SKILL.md
+            source: project
+            activation_count: 1
+        task_count: 1
+        activation_count: 1
+        tasks:
+          - id: task_generation-1
+            turn_index: 0
+            text: Define the ingestion boundary.
+            submitted_at: "2026-09-18T14:00:00Z"
+            time_provenance: native
+        skill_activations:
+          - id: activation_tool-1
+            task_id: task_generation-1
+            turn_index: 0
+            sequence: 2
+            activated_at: "2026-09-18T14:01:00Z"
+            time_provenance: collector_observed
+            path: /home/example/project/.cursor/skills/backend-hexagonal-architecture/SKILL.md
+            source: project
+            name: backend-hexagonal-architecture
+            description: Enforces backend architecture boundaries.
+            payload:
+              status: captured
+              content: |
+                ---
+                name: backend-hexagonal-architecture
+                description: Enforces backend architecture boundaries.
+                ---
+              sha256: 3a7bd3e2360a3d29eea436fcfb7e44c735f48eaa9c0c1b6f7f9b1d4c6a05e8b0
+              byte_length: 131
+              unavailable_reason: null
+            resource_reads: []
+    PopulatedStoreMetadata:
+      value:
+        api_version: v1
+        schema_version: 1
+        supported_schema_version: 1
+        last_successful_ingest_at: "2026-09-18T14:20:00Z"
+        last_ingest_summary:
+          inserted: 1
+          updated: 0
+          unchanged: 3
+          skipped: 1
+          failed: 0
+        harnesses:
+          - cursor

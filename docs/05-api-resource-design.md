@@ -6,6 +6,10 @@ This document proposes the v1 public resource model and the domain and adapter
 boundaries needed to produce it. It is a design document only; it does not
 define framework schemas or implementation classes.
 
+The executable HTTP contract is the
+[OpenAPI 3.1 specification](openapi/v1.yaml). This document explains the
+product and architectural decisions behind that contract.
+
 It refines the [backend architecture](02-backend-architecture.md) and the
 [harness ingestion contract](03-ingestion-contract.md). If native harness data
 does not contribute to one of these resources, an ingestion adapter should not
@@ -225,7 +229,7 @@ Every API error uses one stable envelope:
 
 - `code`: machine-readable error code;
 - `message`: safe user-facing message; and
-- `details`: optional safe structured fields.
+- `details`: safe structured fields, or `null` when none are available.
 
 Expected v1 codes include `conversation_not_found`, `invalid_pagination`,
 `store_missing`, `store_incompatible`, and `store_unreadable`. SQL errors and
@@ -249,7 +253,7 @@ id. Conversations with missing timestamps sort after timestamped
 conversations. The response contains:
 
 - `items`;
-- `next_cursor`, absent on the final page; and
+- `next_cursor`, `null` on the final page; and
 - `limit`.
 
 Cursor pagination is preferred over numeric offsets because continued
