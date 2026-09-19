@@ -219,6 +219,130 @@ def test_parser_with_truncated_transcript_returns_stable_diagnostic(
     assert any(item.code == DiagnosticCode.TRANSCRIPT_TRUNCATED for item in diagnostics)
 
 
+def test_parser_with_message_content_blocks_records_user_tasks(
+    tmp_path: Path,
+) -> None:
+    transcript_dir = tmp_path / "conversation-1"
+    transcript_dir.mkdir()
+    (transcript_dir / "conversation-1.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "role": "user",
+                        "message": {
+                            "content": [
+                                {"type": "text", "text": "Explain the repository."}
+                            ]
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "role": "assistant",
+                        "message": {
+                            "content": [
+                                {
+                                    "type": "tool_use",
+                                    "id": "tu-unknown",
+                                    "name": "Read",
+                                    "input": {"path": "/skills/testing/SKILL.md"},
+                                }
+                            ]
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    snapshot, diagnostics = build_conversation_snapshot(
+        "conversation-1",
+        transcript_dir,
+        None,
+    )
+
+    tasks = [
+        event
+        for event in snapshot.events
+        if event.event_type == EventType.TASK_RECORDED
+    ]
+    assert [event.payload["raw_text"] for event in tasks] == ["Explain the repository."]
+    assert snapshot.title == "Explain the repository."
+    assert any(item.code == DiagnosticCode.READ_OUTCOME_UNKNOWN for item in diagnostics)
+
+
+def test_parser_with_hook_prompt_field_records_task(tmp_path: Path) -> None:
+    spool = write_spool(
+        tmp_path,
+        [
+            {
+                "schema_version": 1,
+                "captured_at": "2026-09-19T12:00:00+00:00",
+                "event_kind": "task_submitted",
+                "payload": {
+                    "conversation_id": "conversation-1",
+                    "generation_id": "generation-1",
+                    "prompt": "Explain the repository.",
+                    "workspace_roots": ["/repo"],
+                },
+            }
+        ],
+    )
+
+    snapshot, _ = build_conversation_snapshot("conversation-1", None, spool)
+
+    tasks = [
+        event
+        for event in snapshot.events
+        if event.event_type == EventType.TASK_RECORDED
+    ]
+    assert [event.payload["raw_text"] for event in tasks] == ["Explain the repository."]
+    assert snapshot.workspace_paths == ("/repo",)
+
+
+def test_plugin_discover_skips_subagent_transcripts(tmp_path: Path) -> None:
+    parent_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    sub_id = "11111111-2222-3333-4444-555555555555"
+    parent_dir = tmp_path / "projects" / "proj" / "agent-transcripts" / parent_id
+    parent_dir.mkdir(parents=True)
+    (parent_dir / f"{parent_id}.jsonl").write_text(
+        json.dumps(
+            {
+                "role": "user",
+                "message": {"content": [{"type": "text", "text": "Hello"}]},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    sub_dir = parent_dir / "subagents"
+    sub_dir.mkdir()
+    (sub_dir / f"{sub_id}.jsonl").write_text(
+        json.dumps(
+            {
+                "role": "user",
+                "message": {"content": [{"type": "text", "text": "Subagent"}]},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    context = DiscoveryContext(
+        home=tmp_path,
+        user_data=tmp_path,
+        transcript_override=tmp_path / "projects",
+        spool_override=tmp_path / "missing-spool.jsonl",
+    )
+
+    ids = {ref.native_conversation_id for ref in CursorPlugin().discover(context)}
+
+    assert parent_id in ids
+    assert sub_id not in ids
+
+
 def test_plugin_with_active_spool_only_source_defers_ingest(tmp_path: Path) -> None:
     spool = write_spool(
         tmp_path,

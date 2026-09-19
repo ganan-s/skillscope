@@ -120,12 +120,59 @@ def _path(payload: dict[str, Any]) -> str | None:
     return value
 
 
-def _task_text(content: object) -> str | None:
-    if not isinstance(content, str):
+_READ_TOOLS = frozenset({"Read", "ReadFile"})
+
+
+def native_content(record: dict[str, Any]) -> object:
+    """Return the native content payload from either Cursor transcript shape."""
+    message = record.get("message")
+    if isinstance(message, dict) and "content" in message:
+        return message.get("content")
+    return record.get("content")
+
+
+def native_user_text(record: dict[str, Any]) -> str | None:
+    """Extract user-query text from a native transcript record.
+
+    Live Cursor transcripts use `{role, message: {content: [{type, text}]}}`.
+    Older records used `{role, content}` as a string or `<user_query>` wrapper.
+    """
+    content = native_content(record)
+    blocks: list[object]
+    if isinstance(content, list):
+        blocks = content
+    elif content is None:
         return None
-    match = _USER_QUERY.search(content)
-    text = (match.group(1) if match else content).strip()
-    return text or None
+    else:
+        blocks = [content]
+    parts: list[str] = []
+    for block in blocks:
+        if isinstance(block, str):
+            raw = block
+        elif isinstance(block, dict) and isinstance(block.get("text"), str):
+            raw = block["text"]
+        else:
+            continue
+        match = _USER_QUERY.search(raw)
+        text = (match.group(1) if match else raw).strip()
+        if text:
+            parts.append(text)
+    return "\n\n".join(parts) if parts else None
+
+
+def _hook_task_text(payload: dict[str, Any]) -> str | None:
+    for key in ("prompt", "text"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    tool_input = payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return None
+    for key in ("input", "prompt", "text"):
+        value = tool_input.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 def _scalar(value: str) -> str | None:
@@ -314,12 +361,11 @@ def build_conversation_snapshot(
     hook_tasks: list[dict[str, Any]] = []
     for record in hooks:
         payload = record.value["payload"]
-        tool_input = payload.get("tool_input")
-        text = tool_input.get("input") if isinstance(tool_input, dict) else None
-        if record.value.get("event_kind") == "task_submitted" and isinstance(text, str):
+        text = _hook_task_text(payload)
+        if record.value.get("event_kind") == "task_submitted" and text:
             hook_tasks.append(
                 {
-                    "text": text.strip(),
+                    "text": text,
                     "generation": payload.get("generation_id"),
                     "record": record,
                 }
@@ -329,7 +375,7 @@ def build_conversation_snapshot(
     for record in transcripts:
         if record.value.get("role") != "user":
             continue
-        text = _task_text(record.value.get("content"))
+        text = native_user_text(record.value)
         if text is None:
             continue
         match = next(
@@ -402,7 +448,7 @@ def build_conversation_snapshot(
         payload = record.value["payload"]
         if (
             kind not in {"read_succeeded", "read_failed"}
-            or payload.get("tool_name") != "Read"
+            or payload.get("tool_name") not in _READ_TOOLS
         ):
             continue
         path = _path(payload)
@@ -524,13 +570,13 @@ def build_conversation_snapshot(
             )
 
     for record in transcripts:
-        content = record.value.get("content")
+        content = native_content(record.value)
         if record.value.get("role") != "assistant" or not isinstance(content, list):
             continue
         for item in content:
             if not isinstance(item, dict) or item.get("type") != "tool_use":
                 continue
-            if item.get("name") == "Read" and item.get("id") not in outcomes:
+            if item.get("name") in _READ_TOOLS and item.get("id") not in outcomes:
                 tool_input = item.get("input")
                 candidate = (
                     tool_input.get("path") if isinstance(tool_input, dict) else None

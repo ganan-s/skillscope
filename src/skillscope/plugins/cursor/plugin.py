@@ -62,7 +62,7 @@ def _transcript_candidates(root: Path) -> dict[str, Path]:
     if not root.is_dir():
         return candidates
     for transcript in sorted(root.rglob("*.jsonl")):
-        if not transcript.is_file():
+        if not transcript.is_file() or "subagents" in transcript.parts:
             continue
         conversation_id = transcript.stem
         existing = candidates.get(conversation_id)
