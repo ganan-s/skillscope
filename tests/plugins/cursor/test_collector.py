@@ -112,6 +112,18 @@ class TestSanitisePayload(unittest.TestCase):
         self.assertIn("conversation_id", clean)
         self.assertIn("tool_name", clean)
 
+    def test_retains_prompt_text(self):
+        raw = {
+            "conversation_id": "c1",
+            "prompt": "Explain the repository.",
+            "user_email": "secret@example.com",
+            "tool_input": {"input": "Explain the repository.", "model": "drop-me"},
+        }
+        clean = _sanitise_payload(raw)
+        self.assertEqual(clean["prompt"], "Explain the repository.")
+        self.assertEqual(clean["tool_input"], {"input": "Explain the repository."})
+        self.assertNotIn("user_email", clean)
+
     def test_retains_failure_fields(self):
         raw = {
             "conversation_id": "c1",
