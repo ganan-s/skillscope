@@ -43,3 +43,6 @@ dist/
 # Frontend
 web/node_modules/
 src/skillscope/web/dist/
+
+# Local visual brainstorming artifacts
+.superpowers/
