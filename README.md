@@ -154,10 +154,8 @@ and open [http://127.0.0.1:8000](http://127.0.0.1:8000) for a working app.
 
 ## Team
 
-| Name | Role | Contact |
-|---|---|---|
-| Ganan | Project lead; ingest API, OpenAPI, dashboard | [github.com/ganan-s](https://github.com/ganan-s) |
-| Spencer Runde | Hooks, ingest contract, local golden harness | [github.com/srunde3](https://github.com/srunde3) · spencer.runde@canonical.com |
+- Ganan
+- Spencer Runde
 
 ## Development
 
