@@ -22,6 +22,7 @@ not use an ORM, job queue, resident worker, or internal network service.
 ```mermaid
 flowchart LR
   transcripts[Cursor transcripts]
+  hookSpool[Cursor hook spool]
   plugin[Cursor harness plugin]
   ingest[Ingest service]
   db[(Snapshot SQLite)]
@@ -29,6 +30,7 @@ flowchart LR
   frontend[Bundled frontend]
 
   transcripts --> plugin
+  hookSpool --> plugin
   plugin --> ingest
   ingest -->|"one conversation transaction"| db
   db -->|"read-only connection"| api
@@ -36,8 +38,8 @@ flowchart LR
 ```
 
 This preserves the central trust boundary from the vision: harness plugins may
-inspect transcript locations during ingest, while the serving process sees only
-the snapshot database and compiled frontend assets.
+inspect transcript and hook-spool locations during ingest, while the serving
+process sees only the snapshot database and compiled frontend assets.
 
 ## Runtime units
 
@@ -98,6 +100,7 @@ src/skillscope/
     base.py
     cursor/
       discovery.py
+      hook_spool.py
       parser.py
       paths.py
   storage/
@@ -144,12 +147,14 @@ For each invocation:
    roots.
 2. Discover candidates and reject sessions that are malformed, still growing,
    or within the active-write grace period.
-3. Parse each closed session into canonical conversation, task, skill
+3. Merge each closed transcript with its hook-spool evidence by native
+   conversation id.
+4. Parse the merged evidence into canonical conversation, task, confirmed skill
    activation, and optional resource-read records.
-4. Validate canonical records at the plugin boundary.
-5. Initialize or migrate the database before processing the batch.
-6. Persist each conversation aggregate in its own transaction.
-7. Report inserted, updated, unchanged, skipped, and failed counts.
+5. Validate canonical records at the plugin boundary.
+6. Initialize or migrate the database before processing the batch.
+7. Persist each conversation aggregate in its own transaction.
+8. Report inserted, updated, unchanged, skipped, and failed counts.
 
 Re-ingest replaces a conversation and its child task/load snapshots as one
 transaction. This prevents a continued conversation from retaining obsolete
@@ -196,6 +201,8 @@ created in the current workspace.
 Schema design belongs in a separate snapshot-schema document. At minimum,
 storage must support conversation aggregates, ordered user tasks, ordered skill
 loads and resources, source revisions, schema version, and last-ingest metadata.
+The canonical adapter DTOs and evidence rules are defined in the
+[harness ingestion contract](03-ingestion-contract.md).
 
 ## REST API
 

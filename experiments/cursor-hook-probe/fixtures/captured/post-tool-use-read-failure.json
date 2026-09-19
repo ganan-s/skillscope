@@ -1,0 +1,22 @@
+{
+  "conversation_id": "conversation-123",
+  "cursor_version": "3.21.13",
+  "duration": 0.598,
+  "error_message": "File not found: <repo>/experiments/cursor-hook-probe/fixtures/missing/SKILL.md",
+  "failure_type": "error",
+  "generation_id": "generation-456",
+  "hook_event_name": "postToolUseFailure",
+  "is_interrupt": false,
+  "model": "model-redacted",
+  "session_id": "conversation-123",
+  "tool_input": {
+    "file_path": "<repo>/experiments/cursor-hook-probe/fixtures/missing/SKILL.md"
+  },
+  "tool_name": "Read",
+  "tool_use_id": "tool-use-000",
+  "transcript_path": "<home>/.cursor/projects/<project>/agent-transcripts/conversation-123/conversation-123.jsonl",
+  "user_email": "<redacted>",
+  "workspace_roots": [
+    "<repo>"
+  ]
+}

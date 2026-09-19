@@ -1,0 +1,4 @@
+# Local output from the Cursor ingestion probe. It may contain prompts,
+# filesystem paths, and file contents, so it must never be committed.
+experiments/cursor-hook-probe/.local/
+
