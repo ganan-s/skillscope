@@ -43,12 +43,13 @@ def ingest_cursor(
         conn.close()
 
 
-def build_api_app(db_path: Path) -> FastAPI:
+def build_api_app(db_path: Path, *, static_dir: Path | None = None) -> FastAPI:
     repository = SQLiteReadRepository(db_path)
     return create_app(
         list_conversations=ListConversations(repository),
         get_conversation=GetConversation(repository),
         get_store_metadata=GetStoreMetadata(repository),
+        static_dir=static_dir,
     )
 
 

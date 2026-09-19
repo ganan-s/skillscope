@@ -122,8 +122,14 @@ def _cmd_serve(args) -> int:
     except StoreError as exc:
         print(f"Cannot serve snapshot store: {exc.code}", file=sys.stderr)
         return 1
-    app = build_api_app(db_path)
-    uvicorn.run(app, host=args.host, port=args.port)
+
+    static_dir = Path(__file__).parent / "web" / "dist"
+    if not static_dir.is_dir():
+        static_dir = None
+
+    app = build_api_app(db_path, static_dir=static_dir)
+    print(f"Skillscope dashboard: http://{args.host}:{args.port}")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0
 
 
