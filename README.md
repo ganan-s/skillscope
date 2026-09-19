@@ -8,6 +8,7 @@ The project is under active development. See:
 - [`docs/01-vision.md`](docs/01-vision.md)
 - [`docs/02-backend-architecture.md`](docs/02-backend-architecture.md)
 - [`docs/03-ingestion-contract.md`](docs/03-ingestion-contract.md)
+- [`docs/05-api-resource-design.md`](docs/05-api-resource-design.md)
 
 ## Development
 
