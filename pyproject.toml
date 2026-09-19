@@ -1,20 +1,69 @@
-[build-system]
-requires = ["setuptools>=68.0"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "skillscope"
 version = "0.1.0"
-description = "Local skill-load visibility for IDE agent conversations"
-requires-python = ">=3.11"
+description = "Local visibility into the skills loaded by agent conversations"
+readme = "README.md"
+requires-python = ">=3.12"
 license = "Apache-2.0"
-# No runtime dependencies beyond the standard library.
+dependencies = [
+    "fastapi>=0.116,<1",
+    "pydantic>=2.11,<3",
+    "uvicorn[standard]>=0.35,<1",
+]
 
 [project.scripts]
 skillscope = "skillscope.cli:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28,<1",
+    "pytest>=8.4,<9",
+    "pytest-cov>=6,<8",
+    "ruff>=0.13,<1",
+]
+
+[tool.uv]
+package = true
 
 [tool.pytest.ini_options]
+addopts = [
+    "--strict-config",
+    "--strict-markers",
+    "-ra",
+]
 testpaths = ["tests"]
+markers = [
+    "integration: exercises concrete backend boundaries",
+    "e2e: exercises the packaged application as a user",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["skillscope"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 88
+src = ["src", "tests", "experiments"]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "B",
+    "E",
+    "F",
+    "I",
+    "RUF",
+    "SIM",
+    "UP",
+]
+
+[tool.ruff.format]
+docstring-code-format = true

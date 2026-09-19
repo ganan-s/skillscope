@@ -1,16 +1,25 @@
-"""Skillscope CLI entry point."""
+"""Command-line driving adapter for Skillscope."""
 
 from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
+from skillscope import __version__
 
-def _build_parser() -> argparse.ArgumentParser:
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the Skillscope command-line parser."""
     parser = argparse.ArgumentParser(
         prog="skillscope",
-        description="Local skill-load visibility for IDE agent conversations",
+        description="Inspect skill loads from closed agent conversations.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -49,13 +58,14 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = _build_parser()
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the Skillscope command-line adapter."""
+    parser = build_parser()
     args = parser.parse_args(argv)
 
     if args.command is None:
         parser.print_help()
-        return 2
+        return 0
 
     if args.command == "ingest":
         return _cmd_ingest(args)

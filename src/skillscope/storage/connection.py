@@ -38,9 +38,7 @@ def connect_readonly(db_path: Path) -> sqlite3.Connection:
 def get_schema_version(conn: sqlite3.Connection) -> int | None:
     """Return the current schema version, or None if not initialised."""
     try:
-        row = conn.execute(
-            "SELECT MAX(version) FROM schema_meta"
-        ).fetchone()
+        row = conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()
         return row[0] if row else None
     except sqlite3.OperationalError:
         return None

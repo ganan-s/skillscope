@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from skillscope.domain.models import EligibilityVerdict
@@ -45,7 +45,7 @@ def run_ingest(
 ) -> IngestSummary:
     """Run a full ingest batch: discover -> inspect -> snapshot -> persist."""
     summary = IngestSummary()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     conn = connect_writable(db_path)
     try:
@@ -80,9 +80,7 @@ def run_ingest(
             except Exception as exc:
                 conn.rollback()
                 summary.failed += 1
-                summary.errors.append(
-                    f"{ref.native_conversation_id}: {exc}"
-                )
+                summary.errors.append(f"{ref.native_conversation_id}: {exc}")
 
         # Update ingest metadata
         conn.execute(

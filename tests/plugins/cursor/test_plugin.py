@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from skillscope.domain.models import (
@@ -55,11 +55,14 @@ class TestDiscovery(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             spool = Path(tmp) / "spool.jsonl"
             spool.write_text(
-                json.dumps({
-                    "schema_version": 1,
-                    "event_kind": "session_started",
-                    "payload": {"conversation_id": "spool-only-conv"},
-                }) + "\n"
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "event_kind": "session_started",
+                        "payload": {"conversation_id": "spool-only-conv"},
+                    }
+                )
+                + "\n"
             )
             ctx = _make_context(
                 tmp,
@@ -86,7 +89,7 @@ class TestInspect(unittest.TestCase):
             source_locators=(FIXTURES / "transcripts" / "conv-test-1",),
             extra={"transcript_dir": str(FIXTURES / "transcripts" / "conv-test-1")},
         )
-        now = datetime(2026, 9, 20, 0, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 9, 20, 0, 0, 0, tzinfo=UTC)
         elig = plugin.inspect(ref, now=now, context=ctx)
         self.assertEqual(elig.verdict, EligibilityVerdict.READY)
         self.assertEqual(elig.basis, ReadinessBasis.NATIVE_END)
@@ -96,11 +99,14 @@ class TestInspect(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             no_end_spool = Path(tmp) / "spool.jsonl"
             no_end_spool.write_text(
-                json.dumps({
-                    "schema_version": 1,
-                    "event_kind": "session_started",
-                    "payload": {"conversation_id": "conv-test-1"},
-                }) + "\n"
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "event_kind": "session_started",
+                        "payload": {"conversation_id": "conv-test-1"},
+                    }
+                )
+                + "\n"
             )
             ctx = _make_context(
                 tmp,
@@ -114,7 +120,7 @@ class TestInspect(unittest.TestCase):
                 source_locators=(),
                 extra={"transcript_dir": str(FIXTURES / "transcripts" / "conv-test-1")},
             )
-            now = datetime(2099, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+            now = datetime(2099, 1, 1, 0, 0, 0, tzinfo=UTC)
             elig = plugin.inspect(ref, now=now, context=ctx)
         self.assertEqual(elig.verdict, EligibilityVerdict.READY)
         self.assertEqual(elig.basis, ReadinessBasis.QUIESCENT)
@@ -124,11 +130,14 @@ class TestInspect(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             spool = Path(tmp) / "spool.jsonl"
             spool.write_text(
-                json.dumps({
-                    "schema_version": 1,
-                    "event_kind": "session_started",
-                    "payload": {"conversation_id": "x"},
-                }) + "\n"
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "event_kind": "session_started",
+                        "payload": {"conversation_id": "x"},
+                    }
+                )
+                + "\n"
             )
             ctx = _make_context(tmp, spool_override=spool)
             ref = ConversationRef(
@@ -137,7 +146,7 @@ class TestInspect(unittest.TestCase):
                 source_locators=(),
                 extra={"spool_only": True},
             )
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             elig = plugin.inspect(ref, now=now, context=ctx)
         self.assertEqual(elig.verdict, EligibilityVerdict.DEFER)
 
@@ -162,7 +171,9 @@ class TestSnapshot(unittest.TestCase):
         self.assertEqual(snap.native_conversation_id, "conv-test-1")
 
         tasks = [e for e in snap.events if e.event_type == EventType.TASK_RECORDED]
-        activations = [e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED]
+        activations = [
+            e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED
+        ]
         self.assertEqual(len(tasks), 2)
         # Two successful reads of the same SKILL.md
         self.assertEqual(len(activations), 2)
@@ -183,7 +194,9 @@ class TestSnapshot(unittest.TestCase):
         )
         snap = plugin.snapshot(ref, context=ctx)
 
-        activations = [e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED]
+        activations = [
+            e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED
+        ]
         self.assertEqual(len(activations), 0)
         tasks = [e for e in snap.events if e.event_type == EventType.TASK_RECORDED]
         self.assertEqual(len(tasks), 1)

@@ -34,6 +34,7 @@ def transcript_roots(home: Path | None = None) -> list[Path]:
 def spool_root(home: Path | None = None) -> Path:
     """Return the default hook-spool parent directory."""
     from skillscope.config import default_data_dir
+
     return default_data_dir()
 
 

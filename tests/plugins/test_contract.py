@@ -9,14 +9,13 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from skillscope.domain.models import (
     DiagnosticCode,
     EventType,
     EvidenceQuality,
-    PayloadStatus,
 )
 from skillscope.plugins.cursor.parser import (
     build_conversation_snapshot,
@@ -48,8 +47,12 @@ def _write_spool(tmp, records):
     return spool
 
 
-def _skill_read_success(conv_id="conv-c", tool_use_id="tu-1", path="/s/SKILL.md",
-                         content="---\nname: test\n---\n"):
+def _skill_read_success(
+    conv_id="conv-c",
+    tool_use_id="tu-1",
+    path="/s/SKILL.md",
+    content="---\nname: test\n---\n",
+):
     """Build a confirmed-success spool record with manifest snapshot."""
     return {
         "schema_version": 1,
@@ -96,41 +99,50 @@ class TestContractConformance(unittest.TestCase):
     """All ten cases from docs/03-ingestion-contract.md section 'Conformance tests'."""
 
     def test_1_confirmed_success_produces_activation(self):
-        """Case 1: A confirmed successful exact SKILL.md activation produces one event."""
+        """Case 1: A confirmed exact SKILL.md read produces one activation."""
         with tempfile.TemporaryDirectory() as tmp:
             spool = _write_spool(tmp, [_skill_read_success()])
-            snap, diags = build_conversation_snapshot("conv-c", None, spool)
+            snap, _ = build_conversation_snapshot("conv-c", None, spool)
 
-        activations = [e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED]
+        activations = [
+            e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED
+        ]
         self.assertEqual(len(activations), 1)
         self.assertEqual(activations[0].evidence.quality, EvidenceQuality.CONFIRMED)
 
     def test_2_repeated_activation_produces_second_event(self):
         """Case 2: A repeated confirmed activation produces a second, stable event."""
         with tempfile.TemporaryDirectory() as tmp:
-            spool = _write_spool(tmp, [
-                _skill_read_success(tool_use_id="tu-1"),
-                _skill_read_success(tool_use_id="tu-2"),
-            ])
+            spool = _write_spool(
+                tmp,
+                [
+                    _skill_read_success(tool_use_id="tu-1"),
+                    _skill_read_success(tool_use_id="tu-2"),
+                ],
+            )
             snap, _ = build_conversation_snapshot("conv-c", None, spool)
 
-        activations = [e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED]
+        activations = [
+            e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED
+        ]
         self.assertEqual(len(activations), 2)
         self.assertNotEqual(activations[0].event_id, activations[1].event_id)
 
     def test_3_failure_produces_no_activation(self):
-        """Case 3: Failure, timeout, denial, or unknown outcome produces no activation."""
+        """Case 3: An unsuccessful outcome produces no activation."""
         with tempfile.TemporaryDirectory() as tmp:
             spool = _write_spool(tmp, [_skill_read_failure()])
             snap, diags = build_conversation_snapshot("conv-c", None, spool)
 
-        activations = [e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED]
+        activations = [
+            e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED
+        ]
         self.assertEqual(len(activations), 0)
         fail_diags = [d for d in diags if d.code == DiagnosticCode.READ_FAILED]
         self.assertEqual(len(fail_diags), 1)
 
     def test_4_negative_cases_produce_no_activation(self):
-        """Case 4: Wrong filename, directory, glob, grep, edit, shell produce no activation."""
+        """Case 4: Non-manifest operations produce no activation."""
         negative_paths = [
             "/s/SKILLS.md",
             "/s/skill.md",
@@ -142,12 +154,16 @@ class TestContractConformance(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmp:
                 rec = _skill_read_success(path=bad_path)
                 # Collector rejects non-SKILL.md basenames and globs
-                if Path(bad_path).name != "SKILL.md" or any(c in bad_path for c in "*?["):
+                if Path(bad_path).name != "SKILL.md" or any(
+                    c in bad_path for c in "*?["
+                ):
                     rec["skill_manifest_snapshot"] = None
                 spool = _write_spool(tmp, [rec])
                 snap, _ = build_conversation_snapshot("conv-c", None, spool)
 
-            activations = [e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED]
+            activations = [
+                e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED
+            ]
             self.assertEqual(len(activations), 0, f"Should reject {bad_path}")
 
     def test_5_missing_payload_preserves_path(self):
@@ -163,13 +179,17 @@ class TestContractConformance(unittest.TestCase):
             spool = _write_spool(tmp, [rec])
             snap, diags = build_conversation_snapshot("conv-c", None, spool)
 
-        activations = [e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED]
+        activations = [
+            e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED
+        ]
         self.assertEqual(len(activations), 1)
         self.assertEqual(activations[0].payload["path"], "/s/SKILL.md")
         self.assertEqual(
             activations[0].payload["payload_snapshot"]["status"], "unavailable"
         )
-        unavail_diags = [d for d in diags if d.code == DiagnosticCode.PAYLOAD_UNAVAILABLE]
+        unavail_diags = [
+            d for d in diags if d.code == DiagnosticCode.PAYLOAD_UNAVAILABLE
+        ]
         self.assertEqual(len(unavail_diags), 1)
 
     def test_6_malformed_frontmatter_no_invented_name(self):
@@ -179,7 +199,9 @@ class TestContractConformance(unittest.TestCase):
             spool = _write_spool(tmp, [rec])
             snap, diags = build_conversation_snapshot("conv-c", None, spool)
 
-        activations = [e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED]
+        activations = [
+            e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED
+        ]
         self.assertEqual(len(activations), 1)
         self.assertNotIn("skill_name", activations[0].payload)
         fm_diags = [d for d in diags if d.code == DiagnosticCode.FRONTMATTER_INVALID]
@@ -189,47 +211,68 @@ class TestContractConformance(unittest.TestCase):
         """Case 7: A zero-activation ready conversation still produces a snapshot."""
         with tempfile.TemporaryDirectory() as tmp:
             # Session with no reads at all
-            spool = _write_spool(tmp, [
-                _spool_line("session_started"),
-                _spool_line("session_ended"),
-            ])
+            spool = _write_spool(
+                tmp,
+                [
+                    _spool_line("session_started"),
+                    _spool_line("session_ended"),
+                ],
+            )
             snap, _ = build_conversation_snapshot("conv-c", None, spool)
 
         self.assertIsNotNone(snap)
         self.assertEqual(snap.native_conversation_id, "conv-c")
-        activations = [e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED]
+        activations = [
+            e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED
+        ]
         self.assertEqual(len(activations), 0)
 
     def test_8_deterministic_replay(self):
         """Case 8: Parsing the same source revision is deterministic."""
         with tempfile.TemporaryDirectory() as tmp:
             spool = _write_spool(tmp, [_skill_read_success()])
-            ts = datetime(2026, 9, 19, 12, 0, 0, tzinfo=timezone.utc)
-            snap1, _ = build_conversation_snapshot("conv-c", None, spool, source_updated_at=ts)
-            snap2, _ = build_conversation_snapshot("conv-c", None, spool, source_updated_at=ts)
+            ts = datetime(2026, 9, 19, 12, 0, 0, tzinfo=UTC)
+            snap1, _ = build_conversation_snapshot(
+                "conv-c", None, spool, source_updated_at=ts
+            )
+            snap2, _ = build_conversation_snapshot(
+                "conv-c", None, spool, source_updated_at=ts
+            )
 
-        self.assertEqual(snap1.source_revision.revision, snap2.source_revision.revision)
+        self.assertEqual(
+            snap1.source_revision.revision,
+            snap2.source_revision.revision,
+        )
         self.assertEqual(len(snap1.events), len(snap2.events))
-        for e1, e2 in zip(snap1.events, snap2.events):
+        for e1, e2 in zip(snap1.events, snap2.events, strict=True):
             self.assertEqual(e1.event_id, e2.event_id)
 
     def test_9_continuation_produces_replacement(self):
         """Case 9: Continuing a conversation produces a replacement snapshot."""
         with tempfile.TemporaryDirectory() as tmp:
-            ts1 = datetime(2026, 9, 19, 12, 0, 0, tzinfo=timezone.utc)
+            ts1 = datetime(2026, 9, 19, 12, 0, 0, tzinfo=UTC)
             spool1 = _write_spool(tmp, [_skill_read_success(tool_use_id="tu-1")])
-            snap1, _ = build_conversation_snapshot("conv-c", None, spool1, source_updated_at=ts1)
+            snap1, _ = build_conversation_snapshot(
+                "conv-c", None, spool1, source_updated_at=ts1
+            )
 
         with tempfile.TemporaryDirectory() as tmp:
-            ts2 = datetime(2026, 9, 19, 13, 0, 0, tzinfo=timezone.utc)
-            spool2 = _write_spool(tmp, [
-                _skill_read_success(tool_use_id="tu-1"),
-                _skill_read_success(tool_use_id="tu-3"),
-            ])
-            snap2, _ = build_conversation_snapshot("conv-c", None, spool2, source_updated_at=ts2)
+            ts2 = datetime(2026, 9, 19, 13, 0, 0, tzinfo=UTC)
+            spool2 = _write_spool(
+                tmp,
+                [
+                    _skill_read_success(tool_use_id="tu-1"),
+                    _skill_read_success(tool_use_id="tu-3"),
+                ],
+            )
+            snap2, _ = build_conversation_snapshot(
+                "conv-c", None, spool2, source_updated_at=ts2
+            )
 
         # Snap2 has more events, different revision
-        self.assertNotEqual(snap1.source_revision.revision, snap2.source_revision.revision)
+        self.assertNotEqual(
+            snap1.source_revision.revision, snap2.source_revision.revision
+        )
         acts1 = [e for e in snap1.events if e.event_type == EventType.SKILL_ACTIVATED]
         acts2 = [e for e in snap2.events if e.event_type == EventType.SKILL_ACTIVATED]
         self.assertEqual(len(acts1), 1)
@@ -247,8 +290,13 @@ class TestContractConformance(unittest.TestCase):
         d = snap.to_dict()
         raw = json.dumps(d)
         # These Cursor-native fields must not appear in the canonical output
-        for cursor_field in ("user_email", "model", "hook_event_name",
-                             "transcript_path", "tool_output"):
+        for cursor_field in (
+            "user_email",
+            "model",
+            "hook_event_name",
+            "transcript_path",
+            "tool_output",
+        ):
             self.assertNotIn(f'"{cursor_field}"', raw)
 
 
@@ -268,9 +316,13 @@ class TestOfflineReadIsNotActivation(unittest.TestCase):
                 "conv-offline", transcript_dir, None
             )
 
-        activations = [e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED]
+        activations = [
+            e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATED
+        ]
         self.assertEqual(len(activations), 0)
-        unknown_diags = [d for d in diags if d.code == DiagnosticCode.READ_OUTCOME_UNKNOWN]
+        unknown_diags = [
+            d for d in diags if d.code == DiagnosticCode.READ_OUTCOME_UNKNOWN
+        ]
         self.assertEqual(len(unknown_diags), 1)
 
 
@@ -297,6 +349,7 @@ class TestFrontmatter(unittest.TestCase):
 class TestSourceBucketInference(unittest.TestCase):
     def test_cursor_builtin(self):
         from skillscope.domain.models import SourceBucket
+
         self.assertEqual(
             infer_source_bucket("/home/u/.cursor/skills-cursor/auth/SKILL.md"),
             SourceBucket.CURSOR_BUILTIN,
@@ -304,6 +357,7 @@ class TestSourceBucketInference(unittest.TestCase):
 
     def test_user_claude_plugin(self):
         from skillscope.domain.models import SourceBucket
+
         self.assertEqual(
             infer_source_bucket("/home/u/.claude/plugins/cache/x/SKILL.md"),
             SourceBucket.USER,
@@ -311,6 +365,7 @@ class TestSourceBucketInference(unittest.TestCase):
 
     def test_project_skill(self):
         from skillscope.domain.models import SourceBucket
+
         self.assertEqual(
             infer_source_bucket(
                 "/home/u/project/skills/SKILL.md",
@@ -321,6 +376,7 @@ class TestSourceBucketInference(unittest.TestCase):
 
     def test_unknown(self):
         from skillscope.domain.models import SourceBucket
+
         self.assertEqual(
             infer_source_bucket("/weird/path/SKILL.md"),
             SourceBucket.UNKNOWN,

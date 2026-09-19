@@ -5,11 +5,11 @@ No Cursor-specific types, paths, or JSON field names may appear here.
 
 from __future__ import annotations
 
-import dataclasses
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from skillscope.domain.models import (
     ConversationSnapshot,
@@ -19,13 +19,14 @@ from skillscope.domain.models import (
 
 @dataclass(frozen=True)
 class Platform:
-    os: str           # "darwin", "linux", "win32"
-    harness: str      # "cursor", etc.
+    os: str  # "darwin", "linux", "win32"
+    harness: str  # "cursor", etc.
 
 
 @dataclass(frozen=True)
 class DiscoveryContext:
     """Runtime configuration supplied by core to the plugin."""
+
     home: Path
     user_data: Path
     transcript_override: Path | None = None
@@ -37,6 +38,7 @@ class DiscoveryContext:
 @dataclass(frozen=True)
 class ConversationRef:
     """Opaque plugin-owned reference to a native conversation."""
+
     harness_id: str
     native_conversation_id: str
     source_locators: tuple[Path, ...] = ()

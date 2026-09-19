@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint and format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Run Ruff lint
+        run: uv run ruff check .
+
+      - name: Check Ruff formatting
+        run: uv run ruff format --check .
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Run unit tests
+        shell: bash
+        run: |
+          if [[ -d tests/unit ]]; then
+            uv run pytest tests/unit
+          else
+            echo "::notice::No unit test suite exists yet"
+          fi
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Run integration tests
+        run: uv run pytest tests/integration

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from skillscope.domain.models import (
@@ -15,24 +14,22 @@ from skillscope.domain.models import (
     ConversationSnapshot,
     Diagnostic,
     DiagnosticCode,
+    EventType,
     Evidence,
     EvidenceQuality,
-    EventType,
     ReadinessBasis,
     SourceRevision,
-    TimeProvenance,
 )
 from skillscope.storage.connection import (
-    connect_writable,
-    get_schema_version,
-    migrate,
     SUPPORTED_SCHEMA_VERSION,
+    connect_writable,
+    migrate,
 )
 from skillscope.storage.repositories import UpsertResult, upsert_conversation
 
 
 def _ts(hour=12):
-    return datetime(2026, 9, 19, hour, 0, 0, tzinfo=timezone.utc)
+    return datetime(2026, 9, 19, hour, 0, 0, tzinfo=UTC)
 
 
 def _make_event(seq=1, event_type=EventType.TASK_RECORDED, event_id=None):
@@ -127,7 +124,8 @@ class TestUpsert(unittest.TestCase):
             conn.commit()
 
             snap2 = _make_snapshot(
-                revision="rev-2", hour=13,
+                revision="rev-2",
+                hour=13,
                 events=[_make_event(1), _make_event(2)],
             )
             result = upsert_conversation(conn, snap2)
@@ -159,7 +157,8 @@ class TestUpsert(unittest.TestCase):
             conn = self._setup_db(tmp)
             # First ingest: 1 task
             snap1 = _make_snapshot(
-                revision="rev-1", hour=12,
+                revision="rev-1",
+                hour=12,
                 events=[_make_event(1, event_id="task-1")],
             )
             upsert_conversation(conn, snap1)
@@ -167,7 +166,8 @@ class TestUpsert(unittest.TestCase):
 
             # Continuation: 2 tasks, different revision
             snap2 = _make_snapshot(
-                revision="rev-2", hour=13,
+                revision="rev-2",
+                hour=13,
                 events=[
                     _make_event(1, event_id="task-1"),
                     _make_event(2, event_id="task-2"),

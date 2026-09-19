@@ -16,7 +16,7 @@ import hashlib
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,30 +31,34 @@ VALID_EVENT_KINDS = {
 }
 
 # Fields stripped from every hook payload before spooling.
-_SENSITIVE_FIELDS = frozenset({
-    "user_email",
-    "model",
-    "tool_output",         # may contain arbitrary file content
-})
+_SENSITIVE_FIELDS = frozenset(
+    {
+        "user_email",
+        "model",
+        "tool_output",  # may contain arbitrary file content
+    }
+)
 
 # Fields retained in the sanitised record.
-_RETAINED_FIELDS = frozenset({
-    "conversation_id",
-    "session_id",
-    "generation_id",
-    "tool_use_id",
-    "tool_name",
-    "tool_input",
-    "cursor_version",
-    "duration",
-    "hook_event_name",
-    "workspace_roots",
-    "transcript_path",
-    # failure-specific
-    "failure_type",
-    "error_message",
-    "is_interrupt",
-})
+_RETAINED_FIELDS = frozenset(
+    {
+        "conversation_id",
+        "session_id",
+        "generation_id",
+        "tool_use_id",
+        "tool_name",
+        "tool_input",
+        "cursor_version",
+        "duration",
+        "hook_event_name",
+        "workspace_roots",
+        "transcript_path",
+        # failure-specific
+        "failure_type",
+        "error_message",
+        "is_interrupt",
+    }
+)
 
 
 def _resolve_spool_path() -> Path:
@@ -62,6 +66,7 @@ def _resolve_spool_path() -> Path:
     if override:
         return Path(override)
     from skillscope.config import default_spool_path
+
     return default_spool_path()
 
 
@@ -125,7 +130,7 @@ def build_record(
     """Build the spool record from a raw hook payload."""
     return {
         "schema_version": 1,
-        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "captured_at": datetime.now(UTC).isoformat(),
         "event_kind": event_kind,
         "payload": _sanitise_payload(payload),
         "skill_manifest_snapshot": snapshot_skill_manifest(event_kind, payload),

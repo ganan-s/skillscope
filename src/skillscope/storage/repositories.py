@@ -5,10 +5,9 @@ from __future__ import annotations
 import dataclasses
 import json
 import sqlite3
-from datetime import datetime
 from enum import Enum
 
-from skillscope.domain.models import CanonicalEvent, ConversationSnapshot, Diagnostic
+from skillscope.domain.models import CanonicalEvent, ConversationSnapshot
 
 
 class UpsertResult:

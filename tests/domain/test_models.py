@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from skillscope.domain.models import (
     CONTRACT_VERSION,
@@ -12,17 +12,16 @@ from skillscope.domain.models import (
     ConversationSnapshot,
     Diagnostic,
     DiagnosticCode,
+    EligibilityVerdict,
+    EventType,
     Evidence,
     EvidenceQuality,
-    EventType,
     IngestEligibility,
-    EligibilityVerdict,
     PayloadSnapshot,
     PayloadStatus,
     ReadinessBasis,
     SourceBucket,
     SourceRevision,
-    TimeProvenance,
 )
 
 
@@ -58,15 +57,15 @@ def _make_snapshot(events=(), diagnostics=()):
         native_conversation_id="conv-1",
         source_revision=SourceRevision(
             revision="rev-abc",
-            updated_at=datetime(2026, 9, 19, 12, 0, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 9, 19, 12, 0, 0, tzinfo=UTC),
         ),
         readiness_basis=ReadinessBasis.NATIVE_END,
         events=tuple(events),
         diagnostics=tuple(diagnostics),
         title="Test conversation",
         workspace_paths=("/home/user/project",),
-        started_at=datetime(2026, 9, 19, 11, 0, 0, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 9, 19, 12, 0, 0, tzinfo=timezone.utc),
+        started_at=datetime(2026, 9, 19, 11, 0, 0, tzinfo=UTC),
+        ended_at=datetime(2026, 9, 19, 12, 0, 0, tzinfo=UTC),
     )
 
 
@@ -123,9 +122,7 @@ class TestConversationSnapshotSerialization(unittest.TestCase):
         self.assertEqual(restored["events"][0]["event_type"], "skill.activated")
         self.assertEqual(restored["events"][1]["event_type"], "task.recorded")
         self.assertEqual(len(restored["diagnostics"]), 1)
-        self.assertEqual(
-            restored["diagnostics"][0]["code"], "read_outcome_unknown"
-        )
+        self.assertEqual(restored["diagnostics"][0]["code"], "read_outcome_unknown")
 
     def test_empty_events_snapshot(self):
         snap = _make_snapshot()
@@ -139,7 +136,7 @@ class TestConversationSnapshotSerialization(unittest.TestCase):
             native_conversation_id="conv-2",
             source_revision=SourceRevision(
                 revision="rev-x",
-                updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                updated_at=datetime(2026, 1, 1, tzinfo=UTC),
             ),
             readiness_basis=ReadinessBasis.QUIESCENT,
             events=(),

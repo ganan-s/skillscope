@@ -17,9 +17,12 @@ class TestIngestCLI(unittest.TestCase):
     def _ingest(self, db_path, transcripts=None, spool=None, grace=0):
         args = [
             "ingest",
-            "--harness", "cursor",
-            "--db", str(db_path),
-            "--grace-seconds", str(grace),
+            "--harness",
+            "cursor",
+            "--db",
+            str(db_path),
+            "--grace-seconds",
+            str(grace),
         ]
         if transcripts:
             args.extend(["--transcripts", str(transcripts)])
@@ -140,7 +143,8 @@ class TestIngestCLI(unittest.TestCase):
             conn.row_factory = sqlite3.Row
 
             convs = conn.execute(
-                "SELECT * FROM conversations WHERE native_conversation_id = 'conv-no-skills'"
+                "SELECT * FROM conversations "
+                "WHERE native_conversation_id = 'conv-no-skills'"
             ).fetchall()
             self.assertEqual(len(convs), 1)
 
@@ -173,7 +177,7 @@ class TestIngestCLI(unittest.TestCase):
 
     def test_no_command_prints_help(self):
         rc = cli_main([])
-        self.assertEqual(rc, 2)
+        self.assertEqual(rc, 0)
 
 
 if __name__ == "__main__":

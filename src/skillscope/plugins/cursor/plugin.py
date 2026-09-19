@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import json
-import os
-import platform
 import sys
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable
 
 from skillscope.domain.models import (
     ConversationSnapshot,
@@ -21,12 +19,12 @@ from skillscope.plugins.base import (
     DiscoveryContext,
     Platform,
 )
-from skillscope.plugins.cursor.paths import find_transcript_dirs
 from skillscope.plugins.cursor.parser import (
-    _parse_spool_records,
     _extract_session_metadata,
+    _parse_spool_records,
     build_conversation_snapshot,
 )
+from skillscope.plugins.cursor.paths import find_transcript_dirs
 
 
 class CursorPlugin:
@@ -76,6 +74,7 @@ class CursorPlugin:
         spool_path = context.spool_override
         if spool_path is None:
             from skillscope.config import default_spool_path
+
             spool_path = default_spool_path()
 
         if spool_path.exists():
@@ -124,6 +123,7 @@ class CursorPlugin:
         spool_path = context.spool_override
         if spool_path is None:
             from skillscope.config import default_spool_path
+
             spool_path = default_spool_path()
 
         spool_records = []
@@ -145,7 +145,9 @@ class CursorPlugin:
             jsonl_files = list(td.glob("*.jsonl"))
             if jsonl_files:
                 latest_mtime = max(f.stat().st_mtime for f in jsonl_files)
-                age = (now - datetime.fromtimestamp(latest_mtime, tz=timezone.utc)).total_seconds()
+                age = (
+                    now - datetime.fromtimestamp(latest_mtime, tz=UTC)
+                ).total_seconds()
                 if age >= context.grace_seconds:
                     return IngestEligibility(
                         verdict=EligibilityVerdict.READY,
@@ -153,7 +155,10 @@ class CursorPlugin:
                     )
                 return IngestEligibility(
                     verdict=EligibilityVerdict.DEFER,
-                    reason=f"transcript modified {age:.0f}s ago, grace={context.grace_seconds}s",
+                    reason=(
+                        f"transcript modified {age:.0f}s ago, "
+                        f"grace={context.grace_seconds}s"
+                    ),
                 )
 
         # Spool-only with no session end: defer
@@ -185,6 +190,7 @@ class CursorPlugin:
         spool_path = context.spool_override
         if spool_path is None:
             from skillscope.config import default_spool_path
+
             spool_path = default_spool_path()
 
         snap, _ = build_conversation_snapshot(

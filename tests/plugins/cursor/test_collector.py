@@ -10,9 +10,9 @@ from pathlib import Path
 from skillscope.plugins.cursor.collector import (
     VALID_EVENT_KINDS,
     _sanitise_payload,
+    append_to_spool,
     build_record,
     snapshot_skill_manifest,
-    append_to_spool,
 )
 
 

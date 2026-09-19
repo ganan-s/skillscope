@@ -12,36 +12,36 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
 
-class EventType(str, enum.Enum):
+
+class EventType(enum.StrEnum):
     SESSION_CLOSED = "session.closed"
     TASK_RECORDED = "task.recorded"
     SKILL_ACTIVATED = "skill.activated"
     SKILL_RESOURCE_READ = "skill.resource_read"
 
 
-class ReadinessBasis(str, enum.Enum):
+class ReadinessBasis(enum.StrEnum):
     NATIVE_END = "native_end"
     QUIESCENT = "quiescent"
 
 
-class TimeProvenance(str, enum.Enum):
+class TimeProvenance(enum.StrEnum):
     NATIVE = "native"
     COLLECTOR_OBSERVED = "collector_observed"
     DERIVED = "derived"
     MISSING = "missing"
 
 
-class EvidenceQuality(str, enum.Enum):
+class EvidenceQuality(enum.StrEnum):
     CONFIRMED = "confirmed"
     INFERRED = "inferred"
 
 
-class SourceBucket(str, enum.Enum):
+class SourceBucket(enum.StrEnum):
     USER = "user"
     CURSOR_BUILTIN = "cursor-builtin"
     AGENTS = "agents"
@@ -49,18 +49,18 @@ class SourceBucket(str, enum.Enum):
     UNKNOWN = "unknown"
 
 
-class PayloadStatus(str, enum.Enum):
+class PayloadStatus(enum.StrEnum):
     CAPTURED = "captured"
     UNAVAILABLE = "unavailable"
 
 
-class EligibilityVerdict(str, enum.Enum):
+class EligibilityVerdict(enum.StrEnum):
     READY = "ready"
     DEFER = "defer"
     REJECT = "reject"
 
 
-class DiagnosticCode(str, enum.Enum):
+class DiagnosticCode(enum.StrEnum):
     READ_OUTCOME_UNKNOWN = "read_outcome_unknown"
     READ_FAILED = "read_failed"
     PAYLOAD_UNAVAILABLE = "payload_unavailable"
@@ -75,9 +75,10 @@ class DiagnosticCode(str, enum.Enum):
 # Value objects
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class Evidence:
-    source_kind: str          # e.g. "transcript", "hook"
+    source_kind: str  # e.g. "transcript", "hook"
     native_event_kind: str
     native_event_id: str | None = None
     redacted_locator: str | None = None
@@ -108,6 +109,7 @@ class Diagnostic:
 # ---------------------------------------------------------------------------
 
 CONTRACT_VERSION = 1
+
 
 @dataclass(frozen=True)
 class CanonicalEvent:
@@ -147,9 +149,11 @@ class CanonicalEvent:
 # Conversation snapshot aggregate
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class SourceRevision:
     """Opaque revision for idempotent upsert."""
+
     revision: str
     updated_at: datetime
 
@@ -190,6 +194,7 @@ class ConversationSnapshot:
 # ---------------------------------------------------------------------------
 # Ingest eligibility
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class IngestEligibility:
