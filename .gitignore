@@ -34,3 +34,8 @@ dist/
 *~
 .DS_Store
 
+# Skillscope runtime data (sensitive: contains prompts and skill contents)
+*.sqlite
+*.jsonl
+!tests/fixtures/**/*.jsonl
+

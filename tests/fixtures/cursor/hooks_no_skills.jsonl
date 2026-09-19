@@ -1,0 +1,2 @@
+{"schema_version": 1, "captured_at": "2026-09-19T11:00:00+00:00", "event_kind": "session_started", "payload": {"conversation_id": "conv-no-skills", "session_id": "conv-no-skills", "workspace_roots": ["/home/user/project"]}, "skill_manifest_snapshot": null}
+{"schema_version": 1, "captured_at": "2026-09-19T11:05:00+00:00", "event_kind": "session_ended", "payload": {"conversation_id": "conv-no-skills", "session_id": "conv-no-skills"}, "skill_manifest_snapshot": null}

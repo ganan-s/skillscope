@@ -1,0 +1,6 @@
+{"role": "user", "content": "<user_query>\nAdd a login form\n</user_query>"}
+{"role": "assistant", "content": [{"type": "text", "text": "I'll help you add a login form. Let me read the auth skill first."}, {"type": "tool_use", "id": "tu-success-1", "name": "Read", "input": {"path": "/home/user/.cursor/skills-cursor/auth/SKILL.md"}}]}
+{"type": "turn_ended", "status": "success"}
+{"role": "user", "content": "<user_query>\nMake it responsive\n</user_query>"}
+{"role": "assistant", "content": [{"type": "text", "text": "Sure, I'll make it responsive."}]}
+{"type": "turn_ended", "status": "success"}
