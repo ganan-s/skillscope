@@ -1,0 +1,2 @@
+{"role":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"path":"<repo>/experiments/cursor-hook-probe/fixtures/missing/SKILL.md"}}]}}
+{"type":"turn_ended","status":"success"}

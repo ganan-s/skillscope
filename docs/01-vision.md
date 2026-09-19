@@ -59,7 +59,7 @@ Out of scope until a later doc:
 
 - Open or in-flight sessions
 - A resident background ingest worker or live transcript watcher
-- Aggregates, critique, write-back, or hooks
+- Aggregates, critique, or write-back
 - Additional harness plugins beyond Cursor
 - Re-reading skill files or repos when serving the UI
 - Cursor-native visualization (marketplace plugin, MCP-in-chat query as the dashboard, IDE webview)
@@ -89,17 +89,27 @@ Ingest finished conversations only. Skip in-progress agent runs so partial JSONL
 
 Do not ingest a thread that is still growing. If the user continues a chat later, ingest again when it is closed; upsert by conversation id.
 
+Cursor's offline transcript records read requests but not their results. v1
+therefore uses an opt-in, fail-open Cursor hook collector to spool successful
+and failed read evidence. The hook does not write SQLite; periodic
+`skillscope ingest` merges its spool with the closed transcript.
+
 ### 4. A skill load is an unambiguous `SKILL.md` file read
 
 Activation is a **skill file read**, not “the path contains `skill`.”
 
 Count `skill.activated` only when all of these hold:
 
+- Native evidence confirms that the operation succeeded; a recorded request
+  with unknown outcome is not an activation
 - The tool is a file read (Cursor `Read`), not grep, glob, list, edit, or shell (`cat`, `sed`, …)
 - The target is a file, not a directory
 - The basename is exactly `SKILL.md` (not `SKILLS.md`, `skill.md`, `SKILL.mdx`)
 - The path is a concrete file path (no glob characters)
-- If the transcript includes the read payload, it parses as YAML frontmatter with a `name` field; if the payload is missing, still record the path but mark `payload_missing` so the UI can show uncertainty rather than inventing a skill
+- If the evidence includes a payload snapshot, it parses as YAML frontmatter
+  with a `name` field; if the payload is missing, still record the path but
+  mark it unavailable so the UI can show uncertainty rather than inventing a
+  skill
 
 Resource reads (other files in the same skill directory) are optional and must be tied to an already-identified skill dir from a valid `SKILL.md` activation **in that thread**.
 
@@ -111,6 +121,7 @@ Negative cases that must **not** count as activation: `SKILLS.md`, `.mdc` rules,
 flowchart LR
   osDetect[OS auto-detect]
   plugin[Cursor harness plugin]
+  hook[Cursor hook spool]
   closed[Closed sessions only]
   parse[Unambiguous SKILL.md parser]
   db[(Snapshot SQLite)]
@@ -120,6 +131,7 @@ flowchart LR
   list[Conversation list]
   detail[Thread: skills loaded]
   osDetect --> plugin
+  hook --> plugin
   plugin --> closed
   closed --> parse
   parse --> db
