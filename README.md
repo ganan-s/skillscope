@@ -38,6 +38,20 @@ uv run skillscope serve
 Without hooks, ingest can still record conversations and prompts. It will not
 emit `skill.activated`. Full operator and dev-loop detail is in
 [`docs/07-hooks-and-dev-ingest.md`](docs/07-hooks-and-dev-ingest.md).
+## Quick start
+
+```bash
+# 1. Ingest closed Cursor conversations
+uv run skillscope ingest --harness cursor
+
+# 2. Build the frontend (requires Node.js 18+)
+cd web && npm install && npm run build && cd ..
+
+# 3. Start the dashboard
+uv run skillscope serve
+```
+
+Open <http://127.0.0.1:8000> in your browser.
 
 ## Development
 
@@ -66,3 +80,14 @@ Apply formatting with:
 ```bash
 uv run ruff format .
 ```
+
+### Frontend development
+
+```bash
+cd web
+npm install
+npm run dev        # Vite dev server with API proxy to :8000
+npm run build      # Production build to src/skillscope/web/dist/
+```
+
+Run `uv run skillscope serve` in another terminal for the API backend.

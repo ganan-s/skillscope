@@ -44,3 +44,6 @@ dist/
 # Project-local Cursor hook capture config (copied from examples/ or experiments/)
 .cursor/hooks.json
 
+# Frontend
+web/node_modules/
+src/skillscope/web/dist/
