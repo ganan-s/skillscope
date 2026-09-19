@@ -22,6 +22,7 @@ not use an ORM, job queue, resident worker, or internal network service.
 ```mermaid
 flowchart LR
   transcripts[Cursor transcripts]
+  hooks[Cursor hook spool]
   plugin[Cursor harness plugin]
   ingest[Ingest service]
   db[(Snapshot SQLite)]
@@ -29,11 +30,16 @@ flowchart LR
   frontend[Bundled frontend]
 
   transcripts --> plugin
+  hooks --> plugin
   plugin --> ingest
   ingest -->|"one conversation transaction"| db
   db -->|"read-only connection"| api
   api --> frontend
 ```
+
+Cursor transcripts omit tool results, so confirmed `skill.activated` events
+require the opt-in hook spool. See
+[hooks and running ingest](07-hooks-and-dev-ingest.md).
 
 This preserves the central trust boundary from the vision: harness plugins may
 inspect transcript locations during ingest, while the serving process sees only

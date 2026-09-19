@@ -6,12 +6,16 @@ This document describes the v1 Cursor harness POC: a hook-based collector, a
 Cursor adapter plugin, and `skillscope ingest` into SQLite. It is the handoff
 for evaluation.
 
+For why hooks are required, the production enablement steps, and how to test
+Skillscope in a dev environment, see
+[hooks and running ingest](07-hooks-and-dev-ingest.md).
+
 ## Quick start
 
 ### 1. Install
 
 ```bash
-pip install -e .
+uv sync
 ```
 
 ### 2. Configure Cursor hooks
@@ -132,4 +136,4 @@ ingest, storage, or the eventual dashboard.
 - The collector strips `user_email`, `model`, and `tool_output` before spooling.
 - The SQLite database contains prompts and skill contents. Treat it as
   sensitive.
-- `skillscope serve` (future) binds only to `127.0.0.1`.
+- `skillscope serve` binds only to `127.0.0.1`.

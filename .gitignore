@@ -1,6 +1,7 @@
 # Local output from the Cursor ingestion probe. It may contain prompts,
 # filesystem paths, and file contents, so it must never be committed.
 experiments/cursor-hook-probe/.local/
+experiments/cursor-golden-session/.local/
 
 # Python bytecode and caches
 __pycache__/
@@ -39,4 +40,7 @@ dist/
 *.sqlite
 *.jsonl
 !tests/fixtures/**/*.jsonl
+
+# Project-local Cursor hook capture config (copied from examples/ or experiments/)
+.cursor/hooks.json
 

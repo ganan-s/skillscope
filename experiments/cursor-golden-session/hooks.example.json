@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "python3 experiments/cursor-golden-session/capture_hook.py session_started",
+        "timeout": 5
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "python3 experiments/cursor-golden-session/capture_hook.py task_submitted",
+        "timeout": 5
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "python3 experiments/cursor-golden-session/capture_hook.py read_succeeded",
+        "matcher": "^(Read|ReadFile)$",
+        "timeout": 5
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "command": "python3 experiments/cursor-golden-session/capture_hook.py read_failed",
+        "matcher": "^(Read|ReadFile)$",
+        "timeout": 5
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "python3 experiments/cursor-golden-session/capture_hook.py session_ended",
+        "timeout": 5
+      }
+    ]
+  }
+}

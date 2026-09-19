@@ -48,7 +48,11 @@ def _transcript_root(context: DiscoveryContext) -> Path:
 
 
 def _spool_path(context: DiscoveryContext) -> Path:
-    return context.spool_override or context.user_data / "cursor-hooks.jsonl"
+    if context.spool_override is not None:
+        return context.spool_override
+    from skillscope.config import default_spool_path
+
+    return default_spool_path()
 
 
 def _transcript_candidates(root: Path) -> dict[str, Path]:
@@ -101,7 +105,10 @@ def _ref_transcript(conversation: ConversationRef) -> Path | None:
     if isinstance(configured, str):
         return Path(configured)
     for locator in conversation.source_locators:
-        if locator.suffix != ".jsonl" or locator.name != "cursor-hooks.jsonl":
+        if locator.suffix != ".jsonl" or locator.name not in {
+            "cursor-hooks.jsonl",
+            "cursor-hook-spool.jsonl",
+        }:
             return locator
     return None
 
