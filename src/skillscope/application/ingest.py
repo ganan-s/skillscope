@@ -1,15 +1,16 @@
-"""Ingest orchestration: discover, inspect, snapshot, persist."""
+"""Harness-neutral ingest orchestration."""
 
 from __future__ import annotations
 
 import dataclasses
-from datetime import UTC, datetime
-from pathlib import Path
+from datetime import datetime
 
+from skillscope.application.ports import (
+    ConversationSnapshotWriter,
+    IngestMetadataWriter,
+)
 from skillscope.domain.models import EligibilityVerdict
 from skillscope.plugins.base import DiscoveryContext, HarnessPlugin
-from skillscope.storage.connection import connect_writable, migrate
-from skillscope.storage.repositories import UpsertResult, upsert_conversation
 
 
 @dataclasses.dataclass
@@ -38,25 +39,32 @@ class IngestSummary:
         return "Ingest: " + ", ".join(parts)
 
 
-def run_ingest(
-    plugin: HarnessPlugin,
-    context: DiscoveryContext,
-    db_path: Path,
-) -> IngestSummary:
-    """Run a full ingest batch: discover -> inspect -> snapshot -> persist."""
-    summary = IngestSummary()
-    now = datetime.now(UTC)
+class IngestConversations:
+    """Ingest ready snapshots through application ports."""
 
-    conn = connect_writable(db_path)
-    try:
-        migrate(conn)
+    def __init__(
+        self,
+        *,
+        plugin: HarnessPlugin,
+        writer: ConversationSnapshotWriter,
+        metadata_writer: IngestMetadataWriter,
+    ) -> None:
+        self._plugin = plugin
+        self._writer = writer
+        self._metadata_writer = metadata_writer
 
-        refs = list(plugin.discover(context))
+    def __call__(
+        self,
+        *,
+        context: DiscoveryContext,
+        now: datetime,
+    ) -> IngestSummary:
+        summary = IngestSummary()
+        refs = list(self._plugin.discover(context))
 
         for ref in refs:
             try:
-                eligibility = plugin.inspect(ref, now=now, context=context)
-
+                eligibility = self._plugin.inspect(ref, now=now, context=context)
                 if eligibility.verdict == EligibilityVerdict.DEFER:
                     summary.deferred += 1
                     continue
@@ -64,32 +72,21 @@ def run_ingest(
                     summary.skipped += 1
                     continue
 
-                snapshot = plugin.snapshot(ref, context=context)
-                result = upsert_conversation(conn, snapshot)
-                conn.commit()
-
-                if result == UpsertResult.INSERTED:
+                snapshot = self._plugin.snapshot(ref, context=context)
+                result = self._writer.persist(snapshot)
+                if result == "inserted":
                     summary.inserted += 1
-                elif result == UpsertResult.UPDATED:
+                elif result == "updated":
                     summary.updated += 1
-                elif result == UpsertResult.UNCHANGED:
+                elif result == "unchanged":
                     summary.unchanged += 1
-                elif result == UpsertResult.SKIPPED_OLDER:
+                elif result == "skipped_older":
                     summary.skipped += 1
-
+                else:
+                    raise ValueError(f"unknown persistence outcome: {result}")
             except Exception as exc:
-                conn.rollback()
                 summary.failed += 1
                 summary.errors.append(f"{ref.native_conversation_id}: {exc}")
 
-        # Update ingest metadata
-        conn.execute(
-            "INSERT OR REPLACE INTO ingest_meta (key, value) VALUES (?, ?)",
-            ("last_ingest_at", now.isoformat()),
-        )
-        conn.commit()
-
-    finally:
-        conn.close()
-
-    return summary
+        self._metadata_writer.record_ingest(completed_at=now, summary=summary)
+        return summary

@@ -5,8 +5,10 @@ from __future__ import annotations
 import dataclasses
 import json
 import sqlite3
+from datetime import datetime
 from enum import Enum
 
+from skillscope.application.ingest import IngestSummary
 from skillscope.domain.models import CanonicalEvent, ConversationSnapshot
 
 
@@ -15,6 +17,10 @@ class UpsertResult:
     UPDATED = "updated"
     UNCHANGED = "unchanged"
     SKIPPED_OLDER = "skipped_older"
+
+
+class RevisionConflictError(RuntimeError):
+    pass
 
 
 def _enum_safe(obj):
@@ -61,6 +67,10 @@ def upsert_conversation(
         # Refuse older revision
         if old_updated > updated_at:
             return UpsertResult.SKIPPED_OLDER
+        if old_updated == updated_at:
+            raise RevisionConflictError(
+                "source revision changed without a newer revision timestamp"
+            )
 
         # Replace: delete children, update row
         conn.execute("DELETE FROM events WHERE conversation_id = ?", (row_id,))
@@ -70,7 +80,7 @@ def upsert_conversation(
             "contract_version = ?, source_revision = ?, source_updated_at = ?, "
             "readiness_basis = ?, title = ?, workspace_paths = ?, "
             "started_at = ?, ended_at = ? "
-            "WHERE id = ?",
+            ", public_id = ? WHERE id = ?",
             (
                 snapshot.contract_version,
                 rev,
@@ -80,6 +90,7 @@ def upsert_conversation(
                 json.dumps(list(snapshot.workspace_paths)),
                 snapshot.started_at.isoformat() if snapshot.started_at else None,
                 snapshot.ended_at.isoformat() if snapshot.ended_at else None,
+                snapshot.public_id,
                 row_id,
             ),
         )
@@ -90,8 +101,8 @@ def upsert_conversation(
             "INSERT INTO conversations "
             "(harness_id, native_conversation_id, contract_version, "
             "source_revision, source_updated_at, readiness_basis, "
-            "title, workspace_paths, started_at, ended_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "title, workspace_paths, started_at, ended_at, public_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 harness,
                 conv_id,
@@ -103,11 +114,60 @@ def upsert_conversation(
                 json.dumps(list(snapshot.workspace_paths)),
                 snapshot.started_at.isoformat() if snapshot.started_at else None,
                 snapshot.ended_at.isoformat() if snapshot.ended_at else None,
+                snapshot.public_id,
             ),
         )
         row_id = cursor.lastrowid
         _insert_children(conn, row_id, snapshot)
         return UpsertResult.INSERTED
+
+
+class SQLiteSnapshotWriter:
+    """Transactional SQLite adapter for complete conversation aggregates."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def persist(self, snapshot: ConversationSnapshot) -> str:
+        try:
+            result = upsert_conversation(self._conn, snapshot)
+            self._conn.commit()
+            return result
+        except Exception:
+            self._conn.rollback()
+            raise
+
+    def record_ingest(
+        self,
+        *,
+        completed_at: datetime,
+        summary: object,
+    ) -> None:
+        if not isinstance(summary, IngestSummary):
+            raise TypeError("summary must be an IngestSummary")
+        values = {
+            "last_ingest_summary": json.dumps(
+                {
+                    "inserted": summary.inserted,
+                    "updated": summary.updated,
+                    "unchanged": summary.unchanged,
+                    "skipped": summary.skipped + summary.deferred,
+                    "failed": summary.failed,
+                },
+                sort_keys=True,
+            )
+        }
+        if not summary.has_failures:
+            values["last_ingest_at"] = completed_at.isoformat()
+        try:
+            self._conn.executemany(
+                "INSERT OR REPLACE INTO ingest_meta (key, value) VALUES (?, ?)",
+                values.items(),
+            )
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
 
 
 def _insert_children(

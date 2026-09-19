@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import unittest
 from datetime import UTC, datetime
@@ -159,11 +160,12 @@ class TestEnumValues(unittest.TestCase):
         self.assertEqual(SourceBucket.UNKNOWN.value, "unknown")
 
     def test_payload_status(self):
+        content = "---\nname: test\n---\n"
         ps = PayloadSnapshot(
             status=PayloadStatus.CAPTURED,
-            content="---\nname: test\n---\n",
-            sha256="abc123",
-            byte_length=20,
+            content=content,
+            sha256=hashlib.sha256(content.encode()).hexdigest(),
+            byte_length=len(content.encode()),
         )
         self.assertEqual(ps.status.value, "captured")
 

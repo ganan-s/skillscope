@@ -1,11 +1,4 @@
-"""Parse Cursor transcripts and hook spool records into canonical events.
-
-Merge rules (from docs/03-ingestion-contract.md):
-- Confirmed hook outcome wins over offline request.
-- Hook workspace roots win over lossy project-directory slug.
-- Offline Read requests alone are ``read_outcome_unknown``, never activation.
-- Activations require confirmed success + exact case-sensitive ``SKILL.md``.
-"""
+"""Normalize Cursor transcripts and hook records into canonical snapshots."""
 
 from __future__ import annotations
 
@@ -13,8 +6,9 @@ import hashlib
 import json
 import re
 from contextlib import suppress
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any
 
 from skillscope.domain.models import (
@@ -26,7 +20,6 @@ from skillscope.domain.models import (
     EventType,
     Evidence,
     EvidenceQuality,
-    PayloadSnapshot,
     PayloadStatus,
     ReadinessBasis,
     SourceBucket,
@@ -34,538 +27,602 @@ from skillscope.domain.models import (
     TimeProvenance,
 )
 
-GLOB_CHARACTERS = frozenset("*?[")
-
-# Regex to extract <user_query> content from Cursor transcript user messages.
-_USER_QUERY_RE = re.compile(r"<user_query>\s*(.*?)\s*</user_query>", re.DOTALL)
+_GLOBS = frozenset("*?[")
+_USER_QUERY = re.compile(r"<user_query>\s*(.*?)\s*</user_query>", re.DOTALL)
 
 
-# ---------------------------------------------------------------------------
-# Source bucket inference
-# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class _Record:
+    value: dict[str, Any]
+    position: int
+    locator: str
+    raw: str
+
+
+def _time(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return (result.replace(tzinfo=UTC) if result.tzinfo is None else result).astimezone(
+        UTC
+    )
+
+
+def _read_jsonl(
+    path: Path | None,
+    diagnostics: list[Diagnostic],
+    *,
+    transcript: bool = False,
+) -> list[_Record]:
+    if path is None or not path.is_file():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        diagnostics.append(
+            Diagnostic(
+                DiagnosticCode.NATIVE_RECORD_UNSUPPORTED,
+                "Native source could not be read.",
+                path=path.name,
+            )
+        )
+        return []
+    records: list[_Record] = []
+    for position, raw in enumerate(lines, 1):
+        if not raw.strip():
+            continue
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError:
+            diagnostics.append(
+                Diagnostic(
+                    DiagnosticCode.TRANSCRIPT_TRUNCATED
+                    if transcript and position == len(lines)
+                    else DiagnosticCode.NATIVE_RECORD_UNSUPPORTED,
+                    "Malformed native JSONL record was skipped.",
+                    path=path.name,
+                    record_position=position,
+                )
+            )
+            continue
+        if isinstance(value, dict):
+            records.append(_Record(value, position, path.name, raw))
+        else:
+            diagnostics.append(
+                Diagnostic(
+                    DiagnosticCode.NATIVE_RECORD_UNSUPPORTED,
+                    "Non-object native record was skipped.",
+                    path=path.name,
+                    record_position=position,
+                )
+            )
+    return records
+
+
+def _transcript_files(source: Path | None) -> list[Path]:
+    if source is None:
+        return []
+    if source.is_file():
+        return [source]
+    return sorted(source.glob("*.jsonl")) if source.is_dir() else []
+
+
+def _path(payload: dict[str, Any]) -> str | None:
+    tool_input = payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return None
+    value = tool_input.get("file_path", tool_input.get("path"))
+    if not isinstance(value, str) or not value or any(c in value for c in _GLOBS):
+        return None
+    return value
+
+
+def _task_text(content: object) -> str | None:
+    if not isinstance(content, str):
+        return None
+    match = _USER_QUERY.search(content)
+    text = (match.group(1) if match else content).strip()
+    return text or None
+
+
+def _scalar(value: str) -> str | None:
+    value = value.strip()
+    if not value or value in {"null", "Null", "NULL", "~"}:
+        return None
+    if value[:1] in {'"', "'"}:
+        if len(value) < 2 or value[-1] != value[0]:
+            return None
+        if value[0] == '"':
+            with suppress(json.JSONDecodeError):
+                decoded = json.loads(value)
+                return decoded if isinstance(decoded, str) else None
+            return None
+        return value[1:-1].replace("''", "'")
+    if value.startswith(("[", "{", "&", "*", "!")):
+        return None
+    return value.split(" #", 1)[0].strip() or None
+
+
+def parse_frontmatter(content: str) -> dict[str, str] | None:
+    """Parse string-valued YAML frontmatter without inventing metadata."""
+    lines = content.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    with suppress(StopIteration):
+        closing = next(
+            i for i, line in enumerate(lines[1:], 1) if line.strip() == "---"
+        )
+        parsed: dict[str, str] = {}
+        index = 1
+        while index < closing:
+            line = lines[index]
+            index += 1
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            if line[:1].isspace() or ":" not in line:
+                return None
+            key, raw = line.split(":", 1)
+            key = key.strip()
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", key):
+                return None
+            if raw.strip() in {"|", ">"}:
+                folded = raw.strip() == ">"
+                block: list[str] = []
+                while index < closing and (
+                    not lines[index].strip() or lines[index][:1].isspace()
+                ):
+                    block.append(lines[index].strip())
+                    index += 1
+                value = (" " if folded else "\n").join(block).strip()
+            else:
+                value = _scalar(raw)
+            if value is not None:
+                parsed[key] = value
+        name = parsed.get("name")
+        if name:
+            result = {"name": name.strip()}
+            if parsed.get("description"):
+                result["description"] = parsed["description"].strip()
+            return result
+    return None
+
+
+def _normal(path: str) -> str:
+    return path.replace("\\", "/").rstrip("/")
 
 
 def infer_source_bucket(
     path: str,
-    workspace_roots: list[str] | None = None,
+    *,
+    workspace_roots: list[str] | tuple[str, ...] = (),
+    user_skill_roots: list[str] | tuple[str, ...] = (),
 ) -> SourceBucket:
-    """Infer a display-level source bucket from a path string."""
-    norm = path.replace("\\", "/")
-    if "/.cursor/skills-cursor/" in norm or "/.cursor/skills/" in norm:
+    """Infer path provenance lexically, without live filesystem resolution."""
+    normal = _normal(path)
+    lowered = normal.lower()
+    for root in workspace_roots:
+        candidate = _normal(root)
+        if normal == candidate or normal.startswith(candidate + "/"):
+            return SourceBucket.PROJECT
+    for root in user_skill_roots:
+        candidate = _normal(root)
+        if normal == candidate or normal.startswith(candidate + "/"):
+            return SourceBucket.USER
+    if "/.cursor/skills-cursor/" in lowered:
         return SourceBucket.CURSOR_BUILTIN
-    if "/.claude/plugins/" in norm:
+    if "/.agents/skills/" in lowered or "/agents/skills/" in lowered:
+        return SourceBucket.AGENTS
+    if any(
+        marker in lowered
+        for marker in ("/.cursor/skills/", "/.claude/plugins/", "/.claude/skills/")
+    ):
         return SourceBucket.USER
-    if "/.codex/skills/" in norm:
-        return SourceBucket.USER
-    # User-level skill directories
-    home_markers = ("/Users/", "/home/", "C:/Users/")
-    for marker in home_markers:
-        if marker in norm:
-            # Check if it's under a workspace
-            if workspace_roots:
-                for wr in workspace_roots:
-                    wr_norm = wr.replace("\\", "/")
-                    if norm.startswith(wr_norm):
-                        return SourceBucket.PROJECT
-            # Check agents dir convention
-            if "/AGENTS.md" in norm:
-                return SourceBucket.AGENTS
-            if "/.cursor/rules/" in norm:
-                return SourceBucket.PROJECT
-    if workspace_roots:
-        for wr in workspace_roots:
-            wr_norm = wr.replace("\\", "/")
-            if norm.startswith(wr_norm):
-                return SourceBucket.PROJECT
     return SourceBucket.UNKNOWN
 
 
-# ---------------------------------------------------------------------------
-# Frontmatter parsing
-# ---------------------------------------------------------------------------
+def _snapshot(value: object) -> tuple[dict[str, Any], bool]:
+    if not isinstance(value, dict) or value.get("status") != "captured":
+        reason = value.get("reason") if isinstance(value, dict) else "snapshot_missing"
+        return {
+            "status": PayloadStatus.UNAVAILABLE.value,
+            "content": None,
+            "sha256": None,
+            "byte_length": None,
+            "unavailable_reason": reason,
+        }, False
+    content = value.get("content")
+    if not isinstance(content, str):
+        return {
+            "status": PayloadStatus.UNAVAILABLE.value,
+            "content": None,
+            "sha256": None,
+            "byte_length": None,
+            "unavailable_reason": "content_missing",
+        }, False
+    body = content.encode()
+    return {
+        "status": PayloadStatus.CAPTURED.value,
+        "content": content,
+        "sha256": hashlib.sha256(body).hexdigest(),
+        "byte_length": len(body),
+        "unavailable_reason": None,
+    }, True
 
 
-def parse_frontmatter(content: str) -> dict[str, str] | None:
-    """Extract name and description from YAML frontmatter.
-
-    Only handles the simple scalar fields the contract needs.
-    Returns None if frontmatter is missing or malformed.
-    """
-    if not content.startswith("---"):
-        return None
-    parts = content.split("---", 2)
-    if len(parts) < 3:
-        return None
-    yaml_block = parts[1].strip()
-    if not yaml_block:
-        return None
-    result: dict[str, str] = {}
-    for line in yaml_block.split("\n"):
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if ":" not in line:
-            continue
-        key, _, value = line.partition(":")
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key in ("name", "description") and value:
-            result[key] = value
-    return result if "name" in result else None
+def _id(prefix: str, conversation_id: str, source: str) -> str:
+    digest = hashlib.sha256(
+        f"{prefix}\0{conversation_id}\0{source}".encode()
+    ).hexdigest()
+    return f"{prefix}-{digest[:24]}"
 
 
-# ---------------------------------------------------------------------------
-# Transcript parsing
-# ---------------------------------------------------------------------------
-
-
-def _parse_transcript_records(jsonl_path: Path) -> list[dict[str, Any]]:
-    """Read a JSONL transcript file into a list of records."""
-    records: list[dict[str, Any]] = []
-    with jsonl_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            with suppress(json.JSONDecodeError):
-                records.append(json.loads(line))
-    return records
-
-
-def _extract_user_query(text: str) -> str:
-    """Extract <user_query> content or fall back to raw text."""
-    match = _USER_QUERY_RE.search(text)
-    if match:
-        return match.group(1).strip()
-    return text.strip()
-
-
-def _extract_user_tasks(
-    records: list[dict[str, Any]],
-    conversation_id: str,
-) -> tuple[list[CanonicalEvent], list[Diagnostic]]:
-    """Extract task.recorded events from transcript user messages."""
-    events: list[CanonicalEvent] = []
-    diagnostics: list[Diagnostic] = []
-    seq = 0
-    turn_idx = 0
-
-    for i, rec in enumerate(records):
-        role = rec.get("role")
-        if role != "user":
-            continue
-        turn_idx += 1
-        content = rec.get("content", "")
-        if isinstance(content, list):
-            # Multi-part content: extract text items
-            text_parts = [
-                p.get("text", "")
-                for p in content
-                if isinstance(p, dict) and p.get("type") == "text"
-            ]
-            content = "\n".join(text_parts)
-        if not isinstance(content, str) or not content.strip():
-            continue
-
-        raw_text = _extract_user_query(content)
-        if not raw_text:
-            continue
-
-        seq += 1
-        event_id = f"{conversation_id}:task:{seq}"
-        events.append(
-            CanonicalEvent(
-                contract_version=CONTRACT_VERSION,
-                event_id=event_id,
-                event_type=EventType.TASK_RECORDED,
-                harness_id="cursor",
-                native_conversation_id=conversation_id,
-                sequence=seq,
-                evidence=Evidence(
-                    source_kind="transcript",
-                    native_event_kind="user_message",
-                    record_position=i,
-                    quality=EvidenceQuality.CONFIRMED,
-                ),
-                turn_index=turn_idx,
-                payload={"raw_text": raw_text},
-            )
-        )
-
-    return events, diagnostics
-
-
-def _find_offline_read_requests(
-    records: list[dict[str, Any]],
-    conversation_id: str,
-    start_seq: int,
-) -> tuple[list[Diagnostic], int]:
-    """Identify offline Read requests that have no confirmed outcome.
-
-    These produce diagnostics, never activations.
-    """
-    diagnostics: list[Diagnostic] = []
-    seq = start_seq
-
-    for i, rec in enumerate(records):
-        role = rec.get("role")
-        if role != "assistant":
-            continue
-        content = rec.get("content", [])
-        if not isinstance(content, list):
-            continue
-        for item in content:
-            if not isinstance(item, dict):
-                continue
-            if item.get("type") != "tool_use":
-                continue
-            tool_name = item.get("name", "")
-            if tool_name not in ("Read", "ReadFile"):
-                continue
-            inp = item.get("input", {})
-            path = inp.get("path", inp.get("file_path", ""))
-            if not isinstance(path, str):
-                continue
-            if Path(path).name == "SKILL.md":
-                diagnostics.append(
-                    Diagnostic(
-                        code=DiagnosticCode.READ_OUTCOME_UNKNOWN,
-                        message="offline Read request with no confirmed outcome",
-                        path=path,
-                        record_position=i,
-                    )
-                )
-
-    return diagnostics, seq
-
-
-# ---------------------------------------------------------------------------
-# Hook spool parsing
-# ---------------------------------------------------------------------------
-
-
-def _parse_spool_records(
-    spool_path: Path,
-    conversation_id: str,
-) -> list[dict[str, Any]]:
-    """Read and filter spool records for a specific conversation."""
-    if not spool_path.exists():
-        return []
-    results: list[dict[str, Any]] = []
-    with spool_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            payload = rec.get("payload", {})
-            cid = payload.get("conversation_id", payload.get("session_id"))
-            if cid == conversation_id:
-                results.append(rec)
-    return results
-
-
-def _hook_activations(
-    spool_records: list[dict[str, Any]],
-    conversation_id: str,
-    workspace_roots: list[str] | None,
-    start_seq: int,
-) -> tuple[list[CanonicalEvent], list[Diagnostic], int]:
-    """Build skill.activated events from confirmed hook reads."""
-    events: list[CanonicalEvent] = []
-    diagnostics: list[Diagnostic] = []
-    seq = start_seq
-
-    for rec in spool_records:
-        event_kind = rec.get("event_kind")
-        payload = rec.get("payload", {})
-        snapshot_data = rec.get("skill_manifest_snapshot")
-
-        if event_kind == "read_failed":
-            tool_input = payload.get("tool_input", {})
-            file_path = tool_input.get("file_path", tool_input.get("path", ""))
-            if isinstance(file_path, str) and Path(file_path).name == "SKILL.md":
-                diagnostics.append(
-                    Diagnostic(
-                        code=DiagnosticCode.READ_FAILED,
-                        message=payload.get("error_message", "read failed"),
-                        path=file_path,
-                    )
-                )
-            continue
-
-        if event_kind != "read_succeeded":
-            continue
-
-        # Only SKILL.md activations
-        if snapshot_data is None:
-            continue
-
-        skill_path = snapshot_data.get("path", "")
-        if not skill_path or Path(skill_path).name != "SKILL.md":
-            continue
-
-        # Build payload snapshot
-        if snapshot_data.get("status") == "captured":
-            ps = PayloadSnapshot(
-                status=PayloadStatus.CAPTURED,
-                content=snapshot_data.get("content"),
-                sha256=snapshot_data.get("sha256"),
-                byte_length=snapshot_data.get("byte_length"),
-            )
-            fm = parse_frontmatter(snapshot_data.get("content", ""))
-            if fm is None and snapshot_data.get("content"):
-                diagnostics.append(
-                    Diagnostic(
-                        code=DiagnosticCode.FRONTMATTER_INVALID,
-                        message="captured manifest lacks valid frontmatter name",
-                        path=skill_path,
-                    )
-                )
-        else:
-            ps = PayloadSnapshot(
-                status=PayloadStatus.UNAVAILABLE,
-                unavailable_reason=snapshot_data.get("reason", "unknown"),
-            )
-            fm = None
-            diagnostics.append(
-                Diagnostic(
-                    code=DiagnosticCode.PAYLOAD_UNAVAILABLE,
-                    message="confirmed activation but payload unavailable",
-                    path=skill_path,
-                )
-            )
-
-        seq += 1
-        tool_use_id = payload.get("tool_use_id")
-        generation_id = payload.get("generation_id")
-        event_id = tool_use_id or f"{conversation_id}:activation:{seq}"
-
-        captured_at_str = rec.get("captured_at")
-        occurred_at = None
-        time_prov = TimeProvenance.MISSING
-        if captured_at_str:
-            try:
-                occurred_at = datetime.fromisoformat(captured_at_str)
-                time_prov = TimeProvenance.COLLECTOR_OBSERVED
-            except (ValueError, TypeError):
-                pass
-
-        event_payload: dict[str, Any] = {
-            "path": skill_path,
-            "source_bucket": infer_source_bucket(skill_path, workspace_roots).value,
-            "tool_name": payload.get("tool_name", "Read"),
-        }
-        if fm:
-            event_payload["skill_name"] = fm.get("name")
-            event_payload["skill_description"] = fm.get("description")
-        event_payload["payload_snapshot"] = {
-            "status": ps.status.value,
-            "sha256": ps.sha256,
-            "byte_length": ps.byte_length,
-        }
-        if ps.status == PayloadStatus.UNAVAILABLE:
-            event_payload["payload_snapshot"]["unavailable_reason"] = (
-                ps.unavailable_reason
-            )
-
-        events.append(
-            CanonicalEvent(
-                contract_version=CONTRACT_VERSION,
-                event_id=event_id,
-                event_type=EventType.SKILL_ACTIVATED,
-                harness_id="cursor",
-                native_conversation_id=conversation_id,
-                sequence=seq,
-                evidence=Evidence(
-                    source_kind="hook",
-                    native_event_kind="postToolUse",
-                    native_event_id=tool_use_id,
-                    harness_version=payload.get("cursor_version"),
-                    quality=EvidenceQuality.CONFIRMED,
-                ),
-                native_turn_id=generation_id,
-                occurred_at=occurred_at,
-                time_provenance=time_prov,
-                payload=event_payload,
-            )
-        )
-
-    return events, diagnostics, seq
-
-
-# ---------------------------------------------------------------------------
-# Session lifecycle from hook spool
-# ---------------------------------------------------------------------------
-
-
-def _extract_session_metadata(
-    spool_records: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """Pull session-level metadata from hook spool records."""
-    meta: dict[str, Any] = {
-        "workspace_roots": [],
-        "has_session_end": False,
-        "end_reason": None,
-        "title": None,
-    }
-    for rec in spool_records:
-        kind = rec.get("event_kind")
-        payload = rec.get("payload", {})
-        if kind == "session_started":
-            roots = payload.get("workspace_roots", [])
-            if roots:
-                meta["workspace_roots"] = roots
-        elif kind == "session_ended":
-            meta["has_session_end"] = True
-        elif kind == "task_submitted":
-            # Use first task as title fallback
-            if meta["title"] is None:
-                text = payload.get("tool_input", {}).get("input", "")
-                if isinstance(text, str) and text.strip():
-                    meta["title"] = text.strip()[:120]
-    return meta
-
-
-# ---------------------------------------------------------------------------
-# Full snapshot assembly
-# ---------------------------------------------------------------------------
+def _evidence(record: _Record, payload: dict[str, Any]) -> Evidence:
+    tool_id = payload.get("tool_use_id")
+    return Evidence(
+        source_kind="hook",
+        native_event_kind="read_succeeded",
+        native_event_id=tool_id if isinstance(tool_id, str) else None,
+        redacted_locator=record.locator,
+        record_position=record.position,
+        harness_version=(
+            payload.get("cursor_version")
+            if isinstance(payload.get("cursor_version"), str)
+            else None
+        ),
+        quality=EvidenceQuality.CONFIRMED,
+    )
 
 
 def build_conversation_snapshot(
     conversation_id: str,
-    transcript_path: Path | None,
+    transcript_dir: Path | None,
     spool_path: Path | None,
     *,
     source_updated_at: datetime | None = None,
-) -> tuple[ConversationSnapshot, list[Diagnostic]]:
-    """Assemble a complete canonical snapshot from available sources.
+    readiness_basis: ReadinessBasis | None = None,
+    contract_version: int = CONTRACT_VERSION,
+    user_skill_roots: tuple[str, ...] = (),
+) -> tuple[ConversationSnapshot, tuple[Diagnostic, ...]]:
+    """Build a deterministic complete snapshot from transcript and hook evidence."""
+    diagnostics: list[Diagnostic] = []
+    transcript_paths = _transcript_files(transcript_dir)
+    transcripts = [
+        record
+        for path in transcript_paths
+        for record in _read_jsonl(path, diagnostics, transcript=True)
+    ]
+    hooks = [
+        record
+        for record in _read_jsonl(spool_path, diagnostics)
+        if isinstance(record.value.get("payload"), dict)
+        and record.value["payload"].get("conversation_id") == conversation_id
+    ]
 
-    Returns the snapshot and all diagnostics (including non-fatal ones).
-    """
-    all_events: list[CanonicalEvent] = []
-    all_diagnostics: list[Diagnostic] = []
-    workspace_roots: list[str] | None = None
+    workspaces: list[str] = []
+    for record in hooks:
+        roots = record.value["payload"].get("workspace_roots")
+        if isinstance(roots, list):
+            workspaces.extend(
+                root
+                for root in roots
+                if isinstance(root, str) and root not in workspaces
+            )
 
-    # 1. Parse hook spool for session metadata and activations
-    spool_records: list[dict[str, Any]] = []
-    if spool_path and spool_path.exists():
-        spool_records = _parse_spool_records(spool_path, conversation_id)
-
-    session_meta = _extract_session_metadata(spool_records)
-    workspace_roots = session_meta.get("workspace_roots") or None
-
-    # 2. Parse transcript for user tasks
-    transcript_records: list[dict[str, Any]] = []
-    if transcript_path and transcript_path.exists():
-        jsonl_files = (
-            list(transcript_path.glob("*.jsonl"))
-            if transcript_path.is_dir()
-            else [transcript_path]
+    hook_tasks: list[dict[str, Any]] = []
+    for record in hooks:
+        payload = record.value["payload"]
+        tool_input = payload.get("tool_input")
+        text = tool_input.get("input") if isinstance(tool_input, dict) else None
+        if record.value.get("event_kind") == "task_submitted" and isinstance(text, str):
+            hook_tasks.append(
+                {
+                    "text": text.strip(),
+                    "generation": payload.get("generation_id"),
+                    "record": record,
+                }
+            )
+    tasks: list[dict[str, Any]] = []
+    used: set[int] = set()
+    for record in transcripts:
+        if record.value.get("role") != "user":
+            continue
+        text = _task_text(record.value.get("content"))
+        if text is None:
+            continue
+        match = next(
+            (
+                i
+                for i, task in enumerate(hook_tasks)
+                if i not in used and task["text"] == text
+            ),
+            None,
         )
-        for jf in sorted(jsonl_files):
-            transcript_records.extend(_parse_transcript_records(jf))
-
-    task_events, task_diags = _extract_user_tasks(transcript_records, conversation_id)
-    all_events.extend(task_events)
-    all_diagnostics.extend(task_diags)
-
-    # 3. Offline read diagnostics
-    read_diags, _ = _find_offline_read_requests(
-        transcript_records, conversation_id, len(all_events)
+        if match is None:
+            tasks.append({"text": text, "record": record})
+        else:
+            used.add(match)
+            tasks.append({**hook_tasks[match], "hook": True})
+    tasks.extend(
+        {**task, "hook": True} for i, task in enumerate(hook_tasks) if i not in used
     )
-    all_diagnostics.extend(read_diags)
+    for index, task in enumerate(tasks):
+        task["turn"] = index
+    generation_turns = {
+        task["generation"]: task["turn"]
+        for task in tasks
+        if isinstance(task.get("generation"), str)
+    }
 
-    # 4. Hook-confirmed activations
-    activation_events, activation_diags, _ = _hook_activations(
-        spool_records,
-        conversation_id,
-        workspace_roots,
-        start_seq=len(all_events),
-    )
-    all_events.extend(activation_events)
-    all_diagnostics.extend(activation_diags)
-
-    # 5. Determine readiness basis
-    readiness = (
-        ReadinessBasis.NATIVE_END
-        if session_meta["has_session_end"]
-        else ReadinessBasis.QUIESCENT
-    )
-
-    # 6. Source revision
-    now = source_updated_at or datetime.now(UTC)
-    content_for_hash = json.dumps([e.to_dict() for e in all_events], sort_keys=True)
-    revision_hash = hashlib.sha256(content_for_hash.encode()).hexdigest()[:16]
-
-    # Session closed event
-    session_closed = CanonicalEvent(
-        contract_version=CONTRACT_VERSION,
-        event_id=f"{conversation_id}:session_closed",
-        event_type=EventType.SESSION_CLOSED,
-        harness_id="cursor",
-        native_conversation_id=conversation_id,
-        sequence=0,
-        evidence=Evidence(
-            source_kind="hook" if session_meta["has_session_end"] else "transcript",
-            native_event_kind="sessionEnd"
-            if session_meta["has_session_end"]
-            else "quiescent",
-            quality=EvidenceQuality.CONFIRMED
-            if session_meta["has_session_end"]
-            else EvidenceQuality.INFERRED,
-        ),
-        occurred_at=now,
-        time_provenance=TimeProvenance.DERIVED,
-        payload={
-            "readiness_basis": readiness.value,
-            "revision": revision_hash,
-        },
-    )
-
-    # Re-sequence: session_closed first, then tasks, then activations
-    ordered: list[CanonicalEvent] = [session_closed]
-    for i, evt in enumerate(all_events):
-        ordered.append(
+    events: list[CanonicalEvent] = []
+    for task in tasks:
+        record = task["record"]
+        generation = task.get("generation")
+        is_hook = bool(task.get("hook"))
+        occurred = _time(record.value.get("captured_at")) if is_hook else None
+        source = (
+            generation
+            if isinstance(generation, str)
+            else f"{record.locator}:{record.position}"
+        )
+        events.append(
             CanonicalEvent(
-                contract_version=evt.contract_version,
-                event_id=evt.event_id,
-                event_type=evt.event_type,
-                harness_id=evt.harness_id,
-                native_conversation_id=evt.native_conversation_id,
-                sequence=i + 1,
-                evidence=evt.evidence,
-                native_turn_id=evt.native_turn_id,
-                turn_index=evt.turn_index,
-                occurred_at=evt.occurred_at,
-                time_provenance=evt.time_provenance,
-                payload=evt.payload,
+                contract_version,
+                _id("task", conversation_id, source),
+                EventType.TASK_RECORDED,
+                "cursor",
+                conversation_id,
+                0,
+                Evidence(
+                    "hook" if is_hook else "transcript",
+                    "task_submitted" if is_hook else "user_message",
+                    generation if isinstance(generation, str) else None,
+                    record.locator,
+                    record.position,
+                    quality=EvidenceQuality.CONFIRMED,
+                ),
+                native_turn_id=generation if isinstance(generation, str) else None,
+                turn_index=task["turn"],
+                occurred_at=occurred,
+                time_provenance=(
+                    TimeProvenance.COLLECTOR_OBSERVED
+                    if occurred
+                    else TimeProvenance.MISSING
+                ),
+                payload={"raw_text": task["text"]},
             )
         )
 
-    # Title fallback: first task text
-    title = session_meta.get("title")
-    if not title and task_events:
-        raw = task_events[0].payload.get("raw_text", "")
-        if raw:
-            title = raw[:120]
+    outcomes: set[str] = set()
+    activations: list[tuple[str, str]] = []
+    for record in hooks:
+        kind = record.value.get("event_kind")
+        payload = record.value["payload"]
+        if (
+            kind not in {"read_succeeded", "read_failed"}
+            or payload.get("tool_name") != "Read"
+        ):
+            continue
+        path = _path(payload)
+        tool_id = payload.get("tool_use_id")
+        if isinstance(tool_id, str):
+            outcomes.add(tool_id)
+        if kind == "read_failed":
+            diagnostics.append(
+                Diagnostic(
+                    DiagnosticCode.READ_FAILED,
+                    "Cursor reported that a read did not succeed.",
+                    path=path,
+                    record_position=record.position,
+                )
+            )
+            continue
+        if path is None:
+            continue
+        generation = payload.get("generation_id")
+        event_id = (
+            tool_id
+            if isinstance(tool_id, str) and tool_id
+            else _id("read", conversation_id, f"hook:{record.position}")
+        )
+        occurred = _time(record.value.get("captured_at"))
+        common = {
+            "contract_version": contract_version,
+            "event_id": event_id,
+            "harness_id": "cursor",
+            "native_conversation_id": conversation_id,
+            "sequence": 0,
+            "evidence": _evidence(record, payload),
+            "native_turn_id": generation if isinstance(generation, str) else None,
+            "turn_index": generation_turns.get(generation),
+            "occurred_at": occurred,
+            "time_provenance": (
+                TimeProvenance.COLLECTOR_OBSERVED
+                if occurred
+                else TimeProvenance.MISSING
+            ),
+        }
+        if PurePath(path).name == "SKILL.md":
+            captured, available = _snapshot(record.value.get("skill_manifest_snapshot"))
+            event_payload: dict[str, Any] = {
+                "path": path,
+                "source_bucket": infer_source_bucket(
+                    path,
+                    workspace_roots=workspaces,
+                    user_skill_roots=user_skill_roots,
+                ).value,
+                "activation_name": "Read",
+                "native_tool_use_id": tool_id if isinstance(tool_id, str) else None,
+                "activation_id": event_id,
+                "payload_snapshot": captured,
+            }
+            if available:
+                frontmatter = parse_frontmatter(captured["content"])
+                if frontmatter:
+                    event_payload["skill_name"] = frontmatter["name"]
+                    if "description" in frontmatter:
+                        event_payload["skill_description"] = frontmatter["description"]
+                else:
+                    diagnostics.append(
+                        Diagnostic(
+                            DiagnosticCode.FRONTMATTER_INVALID,
+                            "Manifest frontmatter is missing or invalid.",
+                            path=path,
+                            record_position=record.position,
+                        )
+                    )
+            else:
+                diagnostics.append(
+                    Diagnostic(
+                        DiagnosticCode.PAYLOAD_UNAVAILABLE,
+                        "Confirmed manifest read could not be snapshotted.",
+                        path=path,
+                        record_position=record.position,
+                    )
+                )
+            events.append(
+                CanonicalEvent(
+                    event_type=EventType.SKILL_ACTIVATED,
+                    payload=event_payload,
+                    **common,
+                )
+            )
+            activations.append((_normal(str(PurePath(path).parent)), event_id))
+            continue
+        parent = next(
+            (
+                activation_id
+                for directory, activation_id in reversed(activations)
+                if _normal(path).startswith(directory + "/")
+            ),
+            None,
+        )
+        if parent:
+            captured, available = _snapshot(record.value.get("resource_snapshot"))
+            if not available:
+                diagnostics.append(
+                    Diagnostic(
+                        DiagnosticCode.PAYLOAD_UNAVAILABLE,
+                        "Confirmed resource read could not be snapshotted.",
+                        path=path,
+                        record_position=record.position,
+                    )
+                )
+            events.append(
+                CanonicalEvent(
+                    event_type=EventType.SKILL_RESOURCE_READ,
+                    payload={
+                        "parent_activation_id": parent,
+                        "path": path,
+                        "native_tool_use_id": tool_id,
+                        "payload_snapshot": captured,
+                    },
+                    **common,
+                )
+            )
 
-    snapshot = ConversationSnapshot(
-        contract_version=CONTRACT_VERSION,
-        harness_id="cursor",
-        native_conversation_id=conversation_id,
-        source_revision=SourceRevision(
-            revision=revision_hash,
-            updated_at=now,
-        ),
-        readiness_basis=readiness,
-        events=tuple(ordered),
-        diagnostics=tuple(all_diagnostics),
-        title=title,
-        workspace_paths=tuple(workspace_roots or []),
+    for record in transcripts:
+        content = record.value.get("content")
+        if record.value.get("role") != "assistant" or not isinstance(content, list):
+            continue
+        for item in content:
+            if not isinstance(item, dict) or item.get("type") != "tool_use":
+                continue
+            if item.get("name") == "Read" and item.get("id") not in outcomes:
+                tool_input = item.get("input")
+                candidate = (
+                    tool_input.get("path") if isinstance(tool_input, dict) else None
+                )
+                diagnostics.append(
+                    Diagnostic(
+                        DiagnosticCode.READ_OUTCOME_UNKNOWN,
+                        "Offline transcript read has no confirmed outcome.",
+                        path=candidate if isinstance(candidate, str) else None,
+                        record_position=record.position,
+                    )
+                )
+
+    starts = [r for r in hooks if r.value.get("event_kind") == "session_started"]
+    ends = [r for r in hooks if r.value.get("event_kind") == "session_ended"]
+    started_at = _time(starts[0].value.get("captured_at")) if starts else None
+    ended_at = _time(ends[-1].value.get("captured_at")) if ends else None
+    basis = readiness_basis or (
+        ReadinessBasis.NATIVE_END if ends else ReadinessBasis.QUIESCENT
     )
-
-    return snapshot, all_diagnostics
+    digest = hashlib.sha256()
+    for path in transcript_paths:
+        with suppress(OSError):
+            digest.update(path.name.encode())
+            digest.update(path.read_bytes())
+    for record in hooks:
+        digest.update(record.raw.encode())
+        digest.update(b"\n")
+    revision = digest.hexdigest()
+    if source_updated_at is None:
+        times = [
+            time for record in hooks if (time := _time(record.value.get("captured_at")))
+        ]
+        for path in transcript_paths:
+            with suppress(OSError):
+                times.append(datetime.fromtimestamp(path.stat().st_mtime, UTC))
+        source_updated_at = max(times, default=datetime(1970, 1, 1, tzinfo=UTC))
+    elif source_updated_at.tzinfo is None:
+        source_updated_at = source_updated_at.replace(tzinfo=UTC)
+    else:
+        source_updated_at = source_updated_at.astimezone(UTC)
+    events.append(
+        CanonicalEvent(
+            contract_version,
+            _id("session", conversation_id, f"{basis.value}:{revision}"),
+            EventType.SESSION_CLOSED,
+            "cursor",
+            conversation_id,
+            0,
+            Evidence(
+                "hook" if ends else "transcript",
+                "session_ended" if ends else "quiescence",
+                redacted_locator=ends[-1].locator if ends else "transcript",
+                record_position=ends[-1].position if ends else None,
+                quality=EvidenceQuality.CONFIRMED if ends else EvidenceQuality.INFERRED,
+            ),
+            occurred_at=ended_at,
+            time_provenance=(
+                TimeProvenance.COLLECTOR_OBSERVED
+                if ended_at
+                else TimeProvenance.MISSING
+            ),
+            payload={
+                "readiness_basis": basis.value,
+                "source_revision": revision,
+                "source_updated_at": source_updated_at.isoformat(),
+                "native_end_reason": (
+                    ends[-1].value["payload"].get("end_reason") if ends else None
+                ),
+                "workspace_paths": workspaces,
+            },
+        )
+    )
+    events = [replace(event, sequence=index) for index, event in enumerate(events)]
+    if not workspaces:
+        diagnostics.append(
+            Diagnostic(
+                DiagnosticCode.METADATA_MISSING,
+                "Workspace metadata was not available.",
+            )
+        )
+    snapshot = ConversationSnapshot(
+        contract_version,
+        "cursor",
+        conversation_id,
+        SourceRevision(revision, source_updated_at),
+        basis,
+        tuple(events),
+        tuple(diagnostics),
+        tasks[0]["text"] if tasks else None,
+        tuple(workspaces),
+        started_at,
+        ended_at,
+    )
+    return snapshot, tuple(diagnostics)

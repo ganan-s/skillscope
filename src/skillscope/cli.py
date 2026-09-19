@@ -54,6 +54,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=300,
         help="Quiescence grace period in seconds (default: 300)",
     )
+    serve = sub.add_parser("serve", help="Serve the read-only local API")
+    serve.add_argument(
+        "--db",
+        type=Path,
+        default=None,
+        help="SQLite database path (default: OS-appropriate user data dir)",
+    )
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8000)
 
     return parser
 
@@ -69,18 +78,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "ingest":
         return _cmd_ingest(args)
+    if args.command == "serve":
+        return _cmd_serve(args)
 
     return 2
 
 
 def _cmd_ingest(args) -> int:
-    from skillscope.application.ingest import run_ingest
+    from skillscope.bootstrap import ingest_cursor
     from skillscope.config import default_db_path
     from skillscope.plugins.base import DiscoveryContext
-    from skillscope.plugins.cursor.plugin import CursorPlugin
 
     db_path = args.db or default_db_path()
-    plugin = CursorPlugin()
 
     context = DiscoveryContext(
         home=Path.home(),
@@ -90,7 +99,7 @@ def _cmd_ingest(args) -> int:
         grace_seconds=args.grace_seconds,
     )
 
-    summary = run_ingest(plugin, context, db_path)
+    summary = ingest_cursor(context=context, db_path=db_path)
     print(summary)
 
     if summary.errors:
@@ -98,6 +107,24 @@ def _cmd_ingest(args) -> int:
             print(f"  ERROR: {err}", file=sys.stderr)
 
     return 1 if summary.has_failures else 0
+
+
+def _cmd_serve(args) -> int:
+    import uvicorn
+
+    from skillscope.application.queries import StoreError
+    from skillscope.bootstrap import build_api_app, validate_read_store
+    from skillscope.config import default_db_path
+
+    db_path = args.db or default_db_path()
+    try:
+        validate_read_store(db_path)
+    except StoreError as exc:
+        print(f"Cannot serve snapshot store: {exc.code}", file=sys.stderr)
+        return 1
+    app = build_api_app(db_path)
+    uvicorn.run(app, host=args.host, port=args.port)
+    return 0
 
 
 if __name__ == "__main__":
