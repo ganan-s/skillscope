@@ -61,7 +61,7 @@ export default function App() {
         collapsed={layout.collapsed}
         onToggle={toggle}
       />
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
         <WorkspacePane
           pane="repositories"
           label="repositories"
@@ -72,11 +72,13 @@ export default function App() {
           onToggle={() => toggle("repositories")}
           onResize={(width) => setPaneWidth("repositories", width)}
         >
-          <RepositoryRail
-            groups={groups}
-            selectedConversationId={selectedConversationId}
-            onSelectConversation={selectConversation}
-          />
+          <div className="h-full w-full min-w-0 [&>*]:!w-full">
+            <RepositoryRail
+              groups={groups}
+              selectedConversationId={selectedConversationId}
+              onSelectConversation={selectConversation}
+            />
+          </div>
         </WorkspacePane>
         <WorkspacePane
           pane="threads"
@@ -88,13 +90,15 @@ export default function App() {
           onToggle={() => toggle("threads")}
           onResize={(width) => setPaneWidth("threads", width)}
         >
-          <ThreadList
-            group={selectedGroup ?? groups[0] ?? null}
-            selectedConversationId={selectedConversationId}
-            onSelectConversation={selectConversation}
-          />
+          <div className="h-full w-full min-w-0 [&>*]:!w-full">
+            <ThreadList
+              group={selectedGroup ?? groups[0] ?? null}
+              selectedConversationId={selectedConversationId}
+              onSelectConversation={selectConversation}
+            />
+          </div>
         </WorkspacePane>
-        <main className="flex min-w-0 flex-1">
+        <main className="flex min-w-[24rem] flex-1">
           <ThreadCanvas
             conversation={selectedConversation}
             selectedActivationId={selectedActivationId}
@@ -111,18 +115,20 @@ export default function App() {
           onToggle={() => toggle("inspector")}
           onResize={(width) => setPaneWidth("inspector", width)}
         >
-          {selectedActivation ? (
-            <EvidenceInspector
-              activation={selectedActivation}
-              onClose={() => toggle("inspector")}
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center">
-              <p className="text-sm text-text-tertiary">
-                Select a skill activation
-              </p>
-            </div>
-          )}
+          <div className="h-full w-full min-w-0 [&>*]:!w-full">
+            {selectedActivation ? (
+              <EvidenceInspector
+                activation={selectedActivation}
+                onClose={() => toggle("inspector")}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center">
+                <p className="text-sm text-text-tertiary">
+                  Select a skill activation
+                </p>
+              </div>
+            )}
+          </div>
         </WorkspacePane>
       </div>
     </div>
