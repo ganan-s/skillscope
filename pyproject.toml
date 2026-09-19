@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skillscope"
+version = "0.1.0"
+description = "Local skill-load visibility for IDE agent conversations"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+# No runtime dependencies beyond the standard library.
+
+[project.scripts]
+skillscope = "skillscope.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

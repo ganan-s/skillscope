@@ -2,3 +2,16 @@
 # filesystem paths, and file contents, so it must never be committed.
 experiments/cursor-hook-probe/.local/
 
+# Python
+__pycache__/
+*.egg-info/
+*.pyc
+dist/
+build/
+
+# Skillscope runtime data (sensitive: contains prompts and skill contents)
+*.sqlite
+*.jsonl
+!tests/fixtures/**/*.jsonl
+!examples/**/*.json
+
