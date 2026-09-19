@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
+
 from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from skillscope.api.schemas import (
     ConversationPageResponse,
@@ -33,6 +36,7 @@ def create_app(
     list_conversations: ListConversations,
     get_conversation: GetConversation,
     get_store_metadata: GetStoreMetadata,
+    static_dir: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Skillscope API", version="1.0.0")
 
@@ -107,5 +111,26 @@ def create_app(
     )
     def metadata_route() -> StoreMetadataResponse:
         return StoreMetadataResponse.model_validate(get_store_metadata())
+
+    if static_dir and static_dir.is_dir():
+        index_path = static_dir / "index.html"
+
+        @app.api_route(
+            "/{path:path}",
+            methods=["GET"],
+            include_in_schema=False,
+        )
+        async def spa_fallback(request: Request, path: str) -> Any:
+            if path.startswith("api/"):
+                return _error(404, "not_found", "API endpoint not found.")
+            file_path = static_dir / path
+            if path and file_path.is_file():
+                return FileResponse(file_path)
+            if index_path.is_file():
+                return FileResponse(index_path)
+            return JSONResponse(
+                status_code=404,
+                content={"detail": "Not found"},
+            )
 
     return app

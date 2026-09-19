@@ -40,3 +40,6 @@ dist/
 *.jsonl
 !tests/fixtures/**/*.jsonl
 
+# Frontend
+web/node_modules/
+src/skillscope/web/dist/
