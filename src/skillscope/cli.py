@@ -85,9 +85,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _cmd_ingest(args) -> int:
+    from skillscope.application.ports import DiscoveryContext
     from skillscope.bootstrap import ingest_cursor
     from skillscope.config import default_db_path
-    from skillscope.plugins.base import DiscoveryContext
 
     db_path = args.db or default_db_path()
 

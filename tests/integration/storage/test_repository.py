@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from skillscope.application.ingest import IngestSummary
+from skillscope.application.ports import IngestMetadata
 from skillscope.domain.models import (
     CONTRACT_VERSION,
     CanonicalEvent,
@@ -107,6 +107,26 @@ def test_equal_timestamp_changed_revision_is_a_conflict(tmp_path: Path) -> None:
     conn.close()
 
 
+def test_revision_order_uses_instants_not_iso_text_order(tmp_path: Path) -> None:
+    db_path = tmp_path / "skillscope.sqlite"
+    conn = connect_writable(db_path)
+    migrate(conn)
+    writer = SQLiteSnapshotWriter(conn)
+    writer.persist(snapshot(revision="first", hour=12, task_ids=("task-1",)))
+    conn.execute(
+        "UPDATE conversations SET source_updated_at = ?",
+        ("2026-09-19T12:00:00+02:00",),
+    )
+    conn.commit()
+
+    result = writer.persist(snapshot(revision="second", hour=11, task_ids=("task-2",)))
+
+    assert result == "updated"
+    rows = conn.execute("SELECT event_id FROM events").fetchall()
+    assert [row["event_id"] for row in rows] == ["task-2"]
+    conn.close()
+
+
 def test_failed_batch_does_not_replace_last_successful_ingest_time(
     tmp_path: Path,
 ) -> None:
@@ -117,15 +137,39 @@ def test_failed_batch_does_not_replace_last_successful_ingest_time(
     successful_at = datetime(2026, 9, 19, 12, tzinfo=UTC)
     writer.record_ingest(
         completed_at=successful_at,
-        summary=IngestSummary(inserted=1),
+        summary=IngestMetadata(1, 0, 0, 0, 0),
     )
 
     writer.record_ingest(
         completed_at=datetime(2026, 9, 19, 13, tzinfo=UTC),
-        summary=IngestSummary(failed=1),
+        summary=IngestMetadata(0, 0, 0, 0, 1),
     )
 
     metadata = dict(conn.execute("SELECT key, value FROM ingest_meta"))
     assert metadata["last_ingest_at"] == successful_at.isoformat()
     assert '"failed": 1' in metadata["last_ingest_summary"]
+    conn.close()
+
+
+def test_deferred_only_batch_does_not_replace_last_successful_ingest_time(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "skillscope.sqlite"
+    conn = connect_writable(db_path)
+    migrate(conn)
+    writer = SQLiteSnapshotWriter(conn)
+    successful_at = datetime(2026, 9, 19, 12, tzinfo=UTC)
+    writer.record_ingest(
+        completed_at=successful_at,
+        summary=IngestMetadata(1, 0, 0, 0, 0),
+    )
+
+    writer.record_ingest(
+        completed_at=datetime(2026, 9, 19, 13, tzinfo=UTC),
+        summary=IngestMetadata(0, 0, 0, 1, 0),
+    )
+
+    metadata = dict(conn.execute("SELECT key, value FROM ingest_meta"))
+    assert metadata["last_ingest_at"] == successful_at.isoformat()
+    assert '"skipped": 1' in metadata["last_ingest_summary"]
     conn.close()

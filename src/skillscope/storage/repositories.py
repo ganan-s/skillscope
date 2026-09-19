@@ -5,10 +5,10 @@ from __future__ import annotations
 import dataclasses
 import json
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 
-from skillscope.application.ingest import IngestSummary
+from skillscope.application.ports import IngestMetadata
 from skillscope.domain.models import CanonicalEvent, ConversationSnapshot
 
 
@@ -21,6 +21,13 @@ class UpsertResult:
 
 class RevisionConflictError(RuntimeError):
     pass
+
+
+def _stored_datetime(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _enum_safe(obj):
@@ -59,15 +66,16 @@ def upsert_conversation(
     if existing:
         row_id = existing["id"]
         old_rev = existing["source_revision"]
-        old_updated = existing["source_updated_at"]
+        old_updated = _stored_datetime(existing["source_updated_at"])
+        incoming_updated = snapshot.source_revision.updated_at.astimezone(UTC)
 
         if old_rev == rev:
             return UpsertResult.UNCHANGED
 
         # Refuse older revision
-        if old_updated > updated_at:
+        if old_updated > incoming_updated:
             return UpsertResult.SKIPPED_OLDER
-        if old_updated == updated_at:
+        if old_updated == incoming_updated:
             raise RevisionConflictError(
                 "source revision changed without a newer revision timestamp"
             )
@@ -141,23 +149,21 @@ class SQLiteSnapshotWriter:
         self,
         *,
         completed_at: datetime,
-        summary: object,
+        summary: IngestMetadata,
     ) -> None:
-        if not isinstance(summary, IngestSummary):
-            raise TypeError("summary must be an IngestSummary")
         values = {
             "last_ingest_summary": json.dumps(
                 {
                     "inserted": summary.inserted,
                     "updated": summary.updated,
                     "unchanged": summary.unchanged,
-                    "skipped": summary.skipped + summary.deferred,
+                    "skipped": summary.skipped,
                     "failed": summary.failed,
                 },
                 sort_keys=True,
             )
         }
-        if not summary.has_failures:
+        if summary.failed == 0 and summary.processed_snapshots > 0:
             values["last_ingest_at"] = completed_at.isoformat()
         try:
             self._conn.executemany(

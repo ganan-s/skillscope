@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from skillscope.application.ingest import IngestSummary
+from skillscope.application.ports import IngestMetadata
 from skillscope.bootstrap import build_api_app
 from skillscope.domain.models import (
     CONTRACT_VERSION,
@@ -56,9 +56,30 @@ def seed_store(db_path: Path) -> ConversationSnapshot:
     migrate(conn)
     writer = SQLiteSnapshotWriter(conn)
     writer.persist(snapshot)
-    writer.record_ingest(completed_at=NOW, summary=IngestSummary(inserted=1))
+    writer.record_ingest(
+        completed_at=NOW,
+        summary=IngestMetadata(1, 0, 0, 0, 0),
+    )
     conn.close()
     return snapshot
+
+
+def _empty_snapshot(
+    conversation_id: str,
+    *,
+    started_at: datetime | None,
+    ended_at: datetime | None,
+) -> ConversationSnapshot:
+    return ConversationSnapshot(
+        contract_version=CONTRACT_VERSION,
+        harness_id="cursor",
+        native_conversation_id=conversation_id,
+        source_revision=SourceRevision(f"revision-{conversation_id}", NOW),
+        readiness_basis=ReadinessBasis.NATIVE_END,
+        events=(),
+        started_at=started_at,
+        ended_at=ended_at,
+    )
 
 
 def test_api_when_store_contains_no_skills_exposes_meta_list_and_detail(
@@ -81,6 +102,23 @@ def test_api_when_store_contains_no_skills_exposes_meta_list_and_detail(
     assert detail.status_code == 200
     assert detail.json()["tasks"][0]["text"] == "Explain the repository."
     assert detail.json()["skill_activations"] == []
+
+
+def test_api_reads_legacy_row_without_persisted_public_id(tmp_path: Path) -> None:
+    db_path = tmp_path / "skillscope.sqlite"
+    snapshot = seed_store(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE conversations SET public_id = NULL")
+    conn.commit()
+    conn.close()
+    client = TestClient(build_api_app(db_path))
+
+    listing = client.get("/api/v1/conversations")
+    detail = client.get(f"/api/v1/conversations/{snapshot.public_id}")
+
+    assert listing.status_code == 200
+    assert listing.json()["items"][0]["id"] == snapshot.public_id
+    assert detail.status_code == 200
 
 
 def test_api_when_conversation_is_unknown_returns_stable_error(tmp_path: Path) -> None:
@@ -118,6 +156,54 @@ def test_api_when_cursor_is_unknown_returns_contract_error(tmp_path: Path) -> No
 
     assert response.status_code == 400
     assert response.json()["code"] == "invalid_pagination"
+
+
+def test_api_paginates_in_stable_newest_first_order(tmp_path: Path) -> None:
+    db_path = tmp_path / "skillscope.sqlite"
+    conn = connect_writable(db_path)
+    migrate(conn)
+    writer = SQLiteSnapshotWriter(conn)
+    snapshots = (
+        _empty_snapshot(
+            "newest",
+            started_at=datetime(2026, 9, 19, 13, tzinfo=UTC),
+            ended_at=datetime(2026, 9, 19, 14, tzinfo=UTC),
+        ),
+        _empty_snapshot(
+            "older",
+            started_at=datetime(2026, 9, 19, 12, tzinfo=UTC),
+            ended_at=datetime(2026, 9, 19, 13, tzinfo=UTC),
+        ),
+        _empty_snapshot(
+            "missing-end",
+            started_at=datetime(2026, 9, 19, 15, tzinfo=UTC),
+            ended_at=None,
+        ),
+    )
+    for snapshot in reversed(snapshots):
+        writer.persist(snapshot)
+    conn.close()
+    client = TestClient(build_api_app(db_path))
+
+    first = client.get("/api/v1/conversations?limit=1").json()
+    second = client.get(
+        "/api/v1/conversations",
+        params={"limit": 1, "cursor": first["next_cursor"]},
+    ).json()
+    third = client.get(
+        "/api/v1/conversations",
+        params={"limit": 1, "cursor": second["next_cursor"]},
+    ).json()
+
+    page_ids = [
+        first["items"][0]["id"],
+        second["items"][0]["id"],
+        third["items"][0]["id"],
+    ]
+    assert page_ids == [snapshot.public_id for snapshot in snapshots]
+    assert first["next_cursor"] is not None
+    assert second["next_cursor"] is not None
+    assert third["next_cursor"] is None
 
 
 def test_api_when_store_is_missing_returns_store_missing(tmp_path: Path) -> None:
@@ -161,6 +247,56 @@ def test_api_when_store_metadata_is_corrupt_returns_store_unreadable(
 
     assert response.status_code == 503
     assert response.json()["code"] == "store_unreadable"
+
+
+def test_api_when_conversation_payload_is_corrupt_returns_store_unreadable(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "skillscope.sqlite"
+    snapshot = seed_store(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE events SET payload = 'not-json'")
+    conn.commit()
+    conn.close()
+    client = TestClient(build_api_app(db_path))
+
+    listing = client.get("/api/v1/conversations")
+    detail = client.get(f"/api/v1/conversations/{snapshot.public_id}")
+
+    assert listing.status_code == 503
+    assert listing.json()["code"] == "store_unreadable"
+    assert detail.status_code == 503
+    assert detail.json()["code"] == "store_unreadable"
+
+
+def test_list_only_hydrates_events_for_requested_page(tmp_path: Path) -> None:
+    db_path = tmp_path / "skillscope.sqlite"
+    seed_store(db_path)
+    newest = _empty_snapshot(
+        "newest",
+        started_at=NOW,
+        ended_at=NOW,
+    )
+    conn = connect_writable(db_path)
+    SQLiteSnapshotWriter(conn).persist(newest)
+    conn.execute(
+        "UPDATE events SET payload = 'not-json' "
+        "WHERE native_conversation_id = 'conversation-no-skills'"
+    )
+    conn.commit()
+    conn.close()
+    client = TestClient(build_api_app(db_path))
+
+    first = client.get("/api/v1/conversations?limit=1")
+    second = client.get(
+        "/api/v1/conversations",
+        params={"limit": 1, "cursor": first.json()["next_cursor"]},
+    )
+
+    assert first.status_code == 200
+    assert first.json()["items"][0]["id"] == newest.public_id
+    assert second.status_code == 503
+    assert second.json()["code"] == "store_unreadable"
 
 
 def test_api_preserves_repeated_activations_and_nested_resource_reads(
@@ -241,7 +377,10 @@ def test_api_preserves_repeated_activations_and_nested_resource_reads(
     migrate(conn)
     writer = SQLiteSnapshotWriter(conn)
     writer.persist(snapshot)
-    writer.record_ingest(completed_at=NOW, summary=IngestSummary(inserted=1))
+    writer.record_ingest(
+        completed_at=NOW,
+        summary=IngestMetadata(1, 0, 0, 0, 0),
+    )
     conn.close()
 
     response = TestClient(build_api_app(db_path)).get(
