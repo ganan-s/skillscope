@@ -167,6 +167,12 @@ uv run pytest
 uv run pytest tests/e2e   # Docker-compatible runtime required
 ```
 
+Apply formatting with:
+
+```bash
+uv run ruff format .
+```
+
 Frontend:
 
 ```bash
@@ -175,6 +181,8 @@ npm install
 npm run dev        # Vite, proxies API to :8000
 npm run build      # writes src/skillscope/web/dist/
 ```
+
+Run `uv run skillscope serve` in another terminal for the API backend.
 
 Design docs: [vision](docs/01-vision.md), [architecture](docs/02-backend-architecture.md),
 [ingestion contract](docs/03-ingestion-contract.md),

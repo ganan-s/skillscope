@@ -27,13 +27,13 @@ export function RepositoryRail({
   };
 
   return (
-    <nav className="border-border flex h-full w-56 shrink-0 flex-col border-r bg-white">
-      <div className="border-border flex h-12 shrink-0 items-center border-b px-4">
-        <span className="text-xs font-semibold tracking-widest uppercase text-text-tertiary">
+    <nav className="flex h-full w-full min-w-0 flex-col">
+      <div className="flex h-11 shrink-0 items-center px-4">
+        <h2 className="text-[11px] font-semibold tracking-[0.08em] uppercase text-text-secondary">
           Repositories
-        </span>
+        </h2>
       </div>
-      <div className="flex-1 overflow-y-auto py-1">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {groups.map((group) => {
           const isCollapsed = collapsed.has(group.path);
           const isActive = group.conversations.some(
@@ -41,36 +41,39 @@ export function RepositoryRail({
           );
 
           return (
-            <div key={group.path}>
-              <button
-                onClick={() => {
-                  toggle(group.path);
-                  if (isCollapsed && group.conversations.length > 0) {
-                    onSelectConversation(group.conversations[0].id);
-                  }
-                }}
-                className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm transition-colors duration-150 ${
-                  isActive
-                    ? "bg-active-bg font-medium text-active"
-                    : "text-text-secondary hover:bg-active-bg/50"
+            <button
+              key={group.path}
+              type="button"
+              onClick={() => {
+                toggle(group.path);
+                if (isCollapsed && group.conversations.length > 0) {
+                  onSelectConversation(group.conversations[0].id);
+                }
+              }}
+              aria-expanded={!isCollapsed}
+              aria-current={isActive ? "true" : undefined}
+              className={`flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors duration-150 ${
+                isActive
+                  ? "bg-accent-soft font-semibold text-text"
+                  : "text-text-secondary hover:bg-active-bg"
+              }`}
+              title={group.path}
+            >
+              <svg
+                aria-hidden="true"
+                className={`h-2.5 w-2.5 shrink-0 text-text-tertiary transition-transform duration-150 ${
+                  isCollapsed ? "" : "rotate-90"
                 }`}
-                title={group.path}
+                viewBox="0 0 12 12"
+                fill="currentColor"
               >
-                <svg
-                  className={`h-3 w-3 shrink-0 transition-transform duration-150 ${
-                    isCollapsed ? "" : "rotate-90"
-                  }`}
-                  viewBox="0 0 12 12"
-                  fill="currentColor"
-                >
-                  <path d="M4 2l4 4-4 4z" />
-                </svg>
-                <span className="truncate">{group.label}</span>
-                <span className="ml-auto text-xs text-text-tertiary">
-                  {group.conversations.length}
-                </span>
-              </button>
-            </div>
+                <path d="M4 2l4 4-4 4z" />
+              </svg>
+              <span className="truncate">{group.label}</span>
+              <span className="ml-auto shrink-0 pl-2 text-[11px] tabular-nums text-text-secondary">
+                {group.conversations.length}
+              </span>
+            </button>
           );
         })}
       </div>

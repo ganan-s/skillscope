@@ -14,55 +14,68 @@ export function ThreadList({
 }: Props) {
   if (!group) {
     return (
-      <div className="border-border flex h-full w-72 shrink-0 flex-col border-r bg-white">
-        <div className="border-border flex h-12 items-center border-b px-4">
-          <span className="text-xs text-text-tertiary">Select a repository</span>
+      <div className="flex h-full w-full min-w-0 flex-col">
+        <div className="flex h-11 shrink-0 items-center px-4">
+          <span className="text-[13px] text-text-secondary">
+            Select a repository
+          </span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="border-border flex h-full w-72 shrink-0 flex-col border-r bg-white">
-      <div className="border-border flex h-12 shrink-0 items-center border-b px-4">
-        <span className="truncate text-sm font-medium">{group.label}</span>
-        <span className="ml-auto text-xs text-text-tertiary">
+    <div className="flex h-full w-full min-w-0 flex-col">
+      <div className="flex h-11 shrink-0 items-center gap-2 px-4">
+        <h2 className="truncate text-[13px] font-semibold text-text">
+          {group.label}
+        </h2>
+        <span className="ml-auto shrink-0 text-[11px] tabular-nums text-text-secondary">
           {group.conversations.length} threads
         </span>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
         {group.conversations.map((conv) => {
           const isActive = conv.id === selectedConversationId;
           return (
             <button
               key={conv.id}
+              type="button"
               onClick={() => onSelectConversation(conv.id)}
-              className={`flex w-full flex-col gap-1 border-b px-4 py-3 text-left transition-colors duration-150 ${
-                isActive
-                  ? "border-border bg-active-bg"
-                  : "border-border-subtle hover:bg-active-bg/50"
+              aria-current={isActive ? "true" : undefined}
+              className={`relative flex w-full flex-col gap-1 rounded-[10px] py-2 pr-3 pl-3.5 text-left transition-colors duration-150 ${
+                isActive ? "bg-accent-soft" : "hover:bg-active-bg"
               }`}
             >
+              {isActive && (
+                <span
+                  aria-hidden="true"
+                  className="absolute top-2 bottom-2 left-1 w-[3px] rounded-full bg-accent"
+                />
+              )}
               <span
-                className={`truncate text-sm ${isActive ? "font-medium text-active" : "text-text"}`}
+                className={`line-clamp-2 text-[13px] leading-snug ${
+                  isActive ? "font-semibold text-text" : "text-text"
+                }`}
               >
                 {conv.title ?? "Untitled"}
               </span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-text-tertiary">
+              <span className="flex items-center gap-1.5 text-[11px] text-text-secondary">
+                <span className="tabular-nums">
                   {relativeTime(conv.ended_at ?? conv.started_at)}
                 </span>
+                <span aria-hidden="true" className="text-text-tertiary">
+                  ·
+                </span>
                 {conv.activation_count > 0 ? (
-                  <span className="text-xs text-text-secondary">
+                  <span className="tabular-nums">
                     {conv.activation_count} skill
                     {conv.activation_count !== 1 ? "s" : ""}
                   </span>
                 ) : (
-                  <span className="text-xs text-text-tertiary italic">
-                    No skills
-                  </span>
+                  <span className="text-text-secondary">No skills</span>
                 )}
-              </div>
+              </span>
             </button>
           );
         })}

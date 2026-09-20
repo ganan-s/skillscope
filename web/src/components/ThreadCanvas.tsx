@@ -1,4 +1,4 @@
-import type { Conversation, SkillActivation } from "../api/types";
+import type { Conversation } from "../api/types";
 import { buildTimeline } from "../api/timeline";
 
 interface Props {
@@ -9,6 +9,7 @@ interface Props {
 
 function skillBasename(path: string): string {
   const parts = path.split("/");
+  // Return parent directory name if it exists, else the filename
   const idx = parts.lastIndexOf("SKILL.md");
   if (idx > 0) return parts[idx - 1];
   return parts[parts.length - 1] || path;
@@ -29,40 +30,6 @@ function sourceLabel(source: string): string {
   }
 }
 
-function ActivationRow({
-  activation,
-  selected,
-  onSelect,
-}: {
-  activation: SkillActivation;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      onClick={onSelect}
-      className={`mb-2 flex w-full items-center gap-2 rounded px-3 py-2 text-left transition-colors duration-150 ${
-        selected
-          ? "bg-active-bg ring-border ring-1"
-          : "hover:bg-active-bg/50"
-      }`}
-    >
-      <div className="bg-spine mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full" />
-      <div className="min-w-0 flex-1">
-        <span className="text-sm font-medium text-text">
-          {activation.name ?? skillBasename(activation.path)}
-        </span>
-        <span className="ml-2 text-xs text-text-tertiary">
-          {sourceLabel(activation.source)}
-        </span>
-      </div>
-      {activation.payload.status === "unavailable" && (
-        <span className="text-xs italic text-text-tertiary">unavailable</span>
-      )}
-    </button>
-  );
-}
-
 export function ThreadCanvas({
   conversation,
   selectedActivationId,
@@ -70,8 +37,8 @@ export function ThreadCanvas({
 }: Props) {
   if (!conversation) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <p className="text-sm text-text-tertiary">
+      <div className="flex h-full min-w-0 flex-1 items-center justify-center p-8">
+        <p className="text-[13px] text-text-secondary">
           Select a conversation to inspect
         </p>
       </div>
@@ -81,36 +48,39 @@ export function ThreadCanvas({
   const timeline = buildTimeline(conversation);
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="border-border flex h-12 shrink-0 items-center gap-3 border-b bg-white px-6">
-        <h2 className="truncate text-sm font-medium">
-          {conversation.title ?? "Untitled"}
-        </h2>
-        <div className="ml-auto flex items-center gap-3 text-xs text-text-tertiary">
-          <span>{conversation.task_count} prompts</span>
-          <span>{conversation.activation_count} activations</span>
-        </div>
-      </div>
+    <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-7">
+        <div className="mx-auto max-w-[46rem]">
+          <p className="mb-6 text-[11px] tabular-nums text-text-secondary">
+            {conversation.task_count} prompts · {conversation.activation_count}{" "}
+            activations
+          </p>
 
-      <div className="flex-1 overflow-y-auto px-6 py-6">
-        <div className="mx-auto max-w-2xl">
           {timeline.length === 0 && (
-            <p className="text-sm text-text-tertiary italic">
+            <p className="text-[13px] text-text-secondary">
               No prompts recorded.
             </p>
           )}
 
           {timeline.map(({ task, activations }, idx) => (
-            <div key={task?.id ?? "unmatched-activations"} className={idx > 0 ? "mt-6" : ""}>
+            <div
+              key={task?.id ?? "unmatched-activations"}
+              className={idx > 0 ? "mt-7" : ""}
+            >
               {task ? (
                 <div className="flex items-start gap-3">
-                  <div className="bg-active mt-1.5 h-2 w-2 shrink-0 rounded-full" />
+                  <span
+                    aria-hidden="true"
+                    className="mt-2 h-2 w-2 shrink-0 rounded-full bg-text-tertiary"
+                  />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm leading-relaxed text-text">{task.text}</p>
+                    <p className="text-[15px] leading-[1.6] whitespace-pre-line text-text">
+                      {task.text}
+                    </p>
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-text-tertiary italic">
+                <p className="text-[13px] text-text-secondary">
                   {conversation.tasks.length === 0
                     ? "No prompts recorded."
                     : "Skills without a matching prompt"}
@@ -118,23 +88,55 @@ export function ThreadCanvas({
               )}
 
               {activations.length > 0 ? (
-                <div className="border-spine ml-[3px] mt-2 border-l pl-6">
-                  {activations.map((act) => (
-                    <ActivationRow
-                      key={act.id}
-                      activation={act}
-                      selected={act.id === selectedActivationId}
-                      onSelect={() =>
-                        onSelectActivation(
-                          act.id === selectedActivationId ? null : act.id,
-                        )
-                      }
-                    />
-                  ))}
+                <div className="mt-2 ml-[3px] border-l border-spine pl-5">
+                  {activations.map((act) => {
+                    const isSelected = act.id === selectedActivationId;
+                    return (
+                      <button
+                        key={act.id}
+                        type="button"
+                        onClick={() =>
+                          onSelectActivation(isSelected ? null : act.id)
+                        }
+                        aria-pressed={isSelected}
+                        className={`relative mb-1 flex w-full items-center gap-2 rounded-lg py-1.5 pr-3 pl-3 text-left transition-colors duration-150 ${
+                          isSelected ? "bg-accent-soft" : "hover:bg-active-bg"
+                        }`}
+                      >
+                        {isSelected && (
+                          <span
+                            aria-hidden="true"
+                            className="absolute top-1.5 bottom-1.5 left-0.5 w-[3px] rounded-full bg-accent"
+                          />
+                        )}
+                        <span
+                          aria-hidden="true"
+                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-spine"
+                        />
+                        <span className="min-w-0 flex-1 truncate">
+                          <span
+                            className={`text-[13px] text-text ${
+                              isSelected ? "font-semibold" : "font-medium"
+                            }`}
+                          >
+                            {act.name ?? skillBasename(act.path)}
+                          </span>
+                          <span className="ml-2 text-[11px] text-text-secondary">
+                            {sourceLabel(act.source)}
+                          </span>
+                        </span>
+                        {act.payload.status === "unavailable" && (
+                          <span className="shrink-0 rounded border border-border px-1.5 py-px text-[10px] tracking-wide uppercase text-text-secondary">
+                            Unavailable
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               ) : (
-                <div className="ml-[3px] mt-2 pl-6">
-                  <p className="text-xs italic text-text-tertiary">
+                <div className="mt-2 ml-[3px] pl-5">
+                  <p className="text-[12px] text-text-secondary">
                     No skills invoked
                   </p>
                 </div>

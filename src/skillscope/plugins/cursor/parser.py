@@ -362,7 +362,7 @@ def build_conversation_snapshot(
     for record in hooks:
         payload = record.value["payload"]
         text = _hook_task_text(payload)
-        if record.value.get("event_kind") == "task_submitted" and text:
+        if record.value.get("event_kind") == "task_submitted":
             hook_tasks.append(
                 {
                     "text": text,
@@ -387,12 +387,23 @@ def build_conversation_snapshot(
             None,
         )
         if match is None:
+            match = next(
+                (
+                    i
+                    for i, task in enumerate(hook_tasks)
+                    if i not in used and task["text"] is None
+                ),
+                None,
+            )
+        if match is None:
             tasks.append({"text": text, "record": record})
         else:
             used.add(match)
-            tasks.append({**hook_tasks[match], "hook": True})
+            tasks.append({**hook_tasks[match], "text": text, "hook": True})
     tasks.extend(
-        {**task, "hook": True} for i, task in enumerate(hook_tasks) if i not in used
+        {**task, "hook": True}
+        for i, task in enumerate(hook_tasks)
+        if i not in used and task["text"] is not None
     )
     for index, task in enumerate(tasks):
         task["turn"] = index
