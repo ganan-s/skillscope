@@ -78,6 +78,25 @@ class TestSPAFallback:
         assert resp.status_code == 200
         assert "console.log" in resp.text
 
+    def test_symlink_outside_static_root_is_not_served(
+        self,
+        db_path: Path,
+        tmp_path: Path,
+    ) -> None:
+        static_dir = tmp_path / "static"
+        static_dir.mkdir()
+        (static_dir / "index.html").write_text("<html>app</html>")
+        secret = tmp_path / "secret.txt"
+        secret.write_text("do-not-serve")
+        (static_dir / "leak.txt").symlink_to(secret)
+        client = _make_client(db_path, static_dir)
+
+        resp = client.get("/leak.txt")
+
+        assert resp.status_code == 200
+        assert "do-not-serve" not in resp.text
+        assert "<html>app</html>" in resp.text
+
     def test_unknown_path_falls_back_to_index(
         self, db_path: Path, tmp_path: Path
     ) -> None:

@@ -24,8 +24,10 @@ packages = ["src/skillscope"]
 [dependency-groups]
 dev = [
     "httpx>=0.28,<1",
+    "jsonschema>=4,<5",
     "pytest>=8.4,<9",
     "pytest-cov>=6,<8",
+    "pyyaml>=6,<7",
     "ruff>=0.13,<1",
     "testcontainers>=4.13,<5",
 ]
@@ -44,6 +46,7 @@ markers = [
     "integration: exercises concrete backend boundaries",
     "e2e: exercises the packaged application as a user",
     "docker: requires a Docker-compatible container runtime",
+    "live: local-only replay of a generated Cursor golden session; run explicitly",
 ]
 
 [tool.coverage.run]

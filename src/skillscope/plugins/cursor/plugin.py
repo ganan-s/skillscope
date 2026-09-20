@@ -10,13 +10,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from skillscope.application.ports import ConversationRef, DiscoveryContext, Platform
 from skillscope.domain.models import (
     ConversationSnapshot,
     EligibilityVerdict,
     IngestEligibility,
     ReadinessBasis,
 )
-from skillscope.plugins.base import ConversationRef, DiscoveryContext, Platform
 from skillscope.plugins.cursor.parser import build_conversation_snapshot
 
 
@@ -62,7 +62,7 @@ def _transcript_candidates(root: Path) -> dict[str, Path]:
     if not root.is_dir():
         return candidates
     for transcript in sorted(root.rglob("*.jsonl")):
-        if not transcript.is_file():
+        if not transcript.is_file() or "subagents" in transcript.parts:
             continue
         conversation_id = transcript.stem
         if transcript.parent.name != conversation_id:
@@ -107,7 +107,10 @@ def _ref_transcript(conversation: ConversationRef) -> Path | None:
     if isinstance(configured, str):
         return Path(configured)
     for locator in conversation.source_locators:
-        if locator.suffix != ".jsonl" or locator.name != "cursor-hooks.jsonl":
+        if locator.suffix != ".jsonl" or locator.name not in {
+            "cursor-hooks.jsonl",
+            "cursor-hook-spool.jsonl",
+        }:
             return locator
     return None
 

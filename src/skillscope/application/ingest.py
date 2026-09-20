@@ -7,10 +7,12 @@ from datetime import datetime
 
 from skillscope.application.ports import (
     ConversationSnapshotWriter,
+    DiscoveryContext,
+    HarnessPlugin,
+    IngestMetadata,
     IngestMetadataWriter,
 )
 from skillscope.domain.models import EligibilityVerdict
-from skillscope.plugins.base import DiscoveryContext, HarnessPlugin
 
 
 @dataclasses.dataclass
@@ -26,6 +28,15 @@ class IngestSummary:
     @property
     def has_failures(self) -> bool:
         return self.failed > 0
+
+    def metadata(self) -> IngestMetadata:
+        return IngestMetadata(
+            inserted=self.inserted,
+            updated=self.updated,
+            unchanged=self.unchanged,
+            skipped=self.skipped + self.deferred,
+            failed=self.failed,
+        )
 
     def __str__(self) -> str:
         parts = [
@@ -84,9 +95,12 @@ class IngestConversations:
                     summary.skipped += 1
                 else:
                     raise ValueError(f"unknown persistence outcome: {result}")
-            except Exception as exc:
+            except Exception:
                 summary.failed += 1
-                summary.errors.append(f"{ref.native_conversation_id}: {exc}")
+                summary.errors.append(f"{ref.native_conversation_id}: ingestion_failed")
 
-        self._metadata_writer.record_ingest(completed_at=now, summary=summary)
+        self._metadata_writer.record_ingest(
+            completed_at=now,
+            summary=summary.metadata(),
+        )
         return summary

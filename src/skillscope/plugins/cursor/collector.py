@@ -26,6 +26,7 @@ _SAFE_FIELDS = {
     "tool_use_id",
     "tool_name",
     "tool_input",
+    "prompt",
     "workspace_roots",
     "cursor_version",
     "failure_type",
@@ -33,7 +34,7 @@ _SAFE_FIELDS = {
     "is_interrupt",
     "end_reason",
 }
-_SAFE_TOOL_INPUT_FIELDS = {"file_path", "path", "input"}
+_SAFE_TOOL_INPUT_FIELDS = {"file_path", "path", "input", "prompt", "text"}
 
 
 def _resolve_spool_path() -> Path:

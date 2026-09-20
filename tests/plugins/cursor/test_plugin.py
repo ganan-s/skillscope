@@ -74,6 +74,16 @@ class TestDiscovery(unittest.TestCase):
         conv_ids = {r.native_conversation_id for r in refs}
         self.assertIn("spool-only-conv", conv_ids)
 
+    def test_default_spool_sits_next_to_user_data(self):
+        from skillscope.config import default_spool_path
+        from skillscope.plugins.cursor.plugin import _spool_path
+
+        ctx = DiscoveryContext(home=Path("/tmp"), user_data=Path("/tmp/data"))
+        self.assertEqual(
+            _spool_path(ctx), Path("/tmp/data") / default_spool_path().name
+        )
+        self.assertEqual(_spool_path(ctx).name, "cursor-hook-spool.jsonl")
+
 
 class TestInspect(unittest.TestCase):
     def test_ready_with_session_end(self):

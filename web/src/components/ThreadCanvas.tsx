@@ -1,4 +1,5 @@
-import type { Conversation, SkillActivation, Task } from "../api/types";
+import type { Conversation } from "../api/types";
+import { buildTimeline } from "../api/timeline";
 
 interface Props {
   conversation: Conversation | null;
@@ -27,33 +28,6 @@ function sourceLabel(source: string): string {
     default:
       return "Unknown";
   }
-}
-
-/** Build an interleaved prompt-to-activation timeline. */
-function buildTimeline(
-  conversation: Conversation,
-): { task: Task; activations: SkillActivation[] }[] {
-  const timeline: { task: Task; activations: SkillActivation[] }[] = [];
-  const activationsByTask = new Map<string | null, SkillActivation[]>();
-
-  for (const act of conversation.skill_activations) {
-    const key = act.task_id;
-    const existing = activationsByTask.get(key);
-    if (existing) {
-      existing.push(act);
-    } else {
-      activationsByTask.set(key, [act]);
-    }
-  }
-
-  for (const task of conversation.tasks) {
-    timeline.push({
-      task,
-      activations: activationsByTask.get(task.id) ?? [],
-    });
-  }
-
-  return timeline;
 }
 
 export function ThreadCanvas({
@@ -89,21 +63,30 @@ export function ThreadCanvas({
           )}
 
           {timeline.map(({ task, activations }, idx) => (
-            <div key={task.id} className={idx > 0 ? "mt-7" : ""}>
-              {/* Prompt */}
-              <div className="flex items-start gap-3">
-                <span
-                  aria-hidden="true"
-                  className="mt-2 h-2 w-2 shrink-0 rounded-full bg-text-tertiary"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="text-[15px] leading-[1.6] whitespace-pre-line text-text">
-                    {task.text}
-                  </p>
+            <div
+              key={task?.id ?? "unmatched-activations"}
+              className={idx > 0 ? "mt-7" : ""}
+            >
+              {task ? (
+                <div className="flex items-start gap-3">
+                  <span
+                    aria-hidden="true"
+                    className="mt-2 h-2 w-2 shrink-0 rounded-full bg-text-tertiary"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[15px] leading-[1.6] whitespace-pre-line text-text">
+                      {task.text}
+                    </p>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <p className="text-[13px] text-text-secondary">
+                  {conversation.tasks.length === 0
+                    ? "No prompts recorded."
+                    : "Skills without a matching prompt"}
+                </p>
+              )}
 
-              {/* Skill activations (causal spine) */}
               {activations.length > 0 ? (
                 <div className="mt-2 ml-[3px] border-l border-spine pl-5">
                   {activations.map((act) => {

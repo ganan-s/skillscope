@@ -4,6 +4,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from skillscope.application.ingest import IngestConversations
+from skillscope.application.ports import (
+    ConversationRef,
+    DiscoveryContext,
+    IngestMetadata,
+    Platform,
+)
 from skillscope.domain.models import (
     CONTRACT_VERSION,
     ConversationSnapshot,
@@ -12,7 +18,6 @@ from skillscope.domain.models import (
     ReadinessBasis,
     SourceRevision,
 )
-from skillscope.plugins.base import ConversationRef, DiscoveryContext, Platform
 
 NOW = datetime(2026, 9, 19, 12, tzinfo=UTC)
 
@@ -68,8 +73,18 @@ class FakeWriter:
         self.snapshots.append(snapshot)
         return "inserted"
 
-    def record_ingest(self, *, completed_at: datetime, summary: object) -> None:
+    def record_ingest(
+        self,
+        *,
+        completed_at: datetime,
+        summary: IngestMetadata,
+    ) -> None:
         self.completed_at = completed_at
+
+
+class FailingWriter(FakeWriter):
+    def persist(self, snapshot: ConversationSnapshot) -> str:
+        raise OSError("/private/transcript/path")
 
 
 def test_ingest_when_sources_are_ready_and_active_persists_only_ready() -> None:
@@ -87,3 +102,18 @@ def test_ingest_when_sources_are_ready_and_active_persists_only_ready() -> None:
     assert result.deferred == 1
     assert [item.native_conversation_id for item in writer.snapshots] == ["ready"]
     assert writer.completed_at == NOW
+
+
+def test_ingest_when_adapter_fails_redacts_internal_error_details() -> None:
+    writer = FailingWriter()
+    operation = IngestConversations(
+        plugin=FakePlugin(),
+        writer=writer,
+        metadata_writer=writer,
+    )
+    context = DiscoveryContext(home=Path("/home/test"), user_data=Path("/data"))
+
+    result = operation(context=context, now=NOW)
+
+    assert result.failed == 1
+    assert result.errors == ["ready: ingestion_failed"]

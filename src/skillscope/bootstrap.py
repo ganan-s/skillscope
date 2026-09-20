@@ -9,12 +9,12 @@ from fastapi import FastAPI
 
 from skillscope.api.app import create_app
 from skillscope.application.ingest import IngestConversations, IngestSummary
+from skillscope.application.ports import DiscoveryContext
 from skillscope.application.queries import (
     GetConversation,
     GetStoreMetadata,
     ListConversations,
 )
-from skillscope.plugins.base import DiscoveryContext
 from skillscope.storage.connection import connect_writable, migrate
 from skillscope.storage.readers import SQLiteReadRepository
 from skillscope.storage.repositories import SQLiteSnapshotWriter

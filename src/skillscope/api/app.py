@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, JSONResponse
 
 from skillscope.api.schemas import (
@@ -113,7 +114,8 @@ def create_app(
         return StoreMetadataResponse.model_validate(get_store_metadata())
 
     if static_dir and static_dir.is_dir():
-        index_path = static_dir / "index.html"
+        static_root = static_dir.resolve()
+        index_path = static_root / "index.html"
 
         @app.api_route(
             "/{path:path}",
@@ -123,8 +125,8 @@ def create_app(
         async def spa_fallback(request: Request, path: str) -> Any:
             if path.startswith("api/"):
                 return _error(404, "not_found", "API endpoint not found.")
-            file_path = static_dir / path
-            if path and file_path.is_file():
+            file_path = (static_root / path).resolve()
+            if path and file_path.is_relative_to(static_root) and file_path.is_file():
                 return FileResponse(file_path)
             if index_path.is_file():
                 return FileResponse(index_path)
@@ -133,4 +135,21 @@ def create_app(
                 content={"detail": "Not found"},
             )
 
+    def contract_openapi() -> dict[str, Any]:
+        if app.openapi_schema is None:
+            schema = get_openapi(
+                title=app.title,
+                version=app.version,
+                routes=app.routes,
+            )
+            for path, operations in schema.get("paths", {}).items():
+                if not path.startswith("/api/v1/"):
+                    continue
+                for operation in operations.values():
+                    if isinstance(operation, dict):
+                        operation.get("responses", {}).pop("422", None)
+            app.openapi_schema = schema
+        return app.openapi_schema
+
+    app.openapi = contract_openapi
     return app
