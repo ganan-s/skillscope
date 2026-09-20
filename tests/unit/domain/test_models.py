@@ -94,37 +94,33 @@ def test_snapshot_when_activation_failure_is_confirmed_accepts_event() -> None:
     assert snapshot(failed).events[0].event_type == EventType.SKILL_ACTIVATION_FAILED
 
 
-def test_snapshot_when_activation_failure_is_inferred_rejects_event() -> None:
-    failed = CanonicalEvent(
-        contract_version=CONTRACT_VERSION,
-        event_id="fail-1",
-        event_type=EventType.SKILL_ACTIVATION_FAILED,
-        harness_id="cursor",
-        native_conversation_id="conversation-1",
-        sequence=1,
-        evidence=Evidence(
-            source_kind="hook",
-            native_event_kind="read_failed",
-            quality=EvidenceQuality.INFERRED,
-        ),
-        payload={"path": "/skills/testing/SKILL.md", "reason": "failed"},
-    )
-
+def test_activation_failure_when_evidence_is_inferred_rejects_event() -> None:
     with pytest.raises(ValueError, match="activation failure requires"):
-        snapshot(failed)
+        CanonicalEvent(
+            contract_version=CONTRACT_VERSION,
+            event_id="fail-1",
+            event_type=EventType.SKILL_ACTIVATION_FAILED,
+            harness_id="cursor",
+            native_conversation_id="conversation-1",
+            sequence=1,
+            evidence=Evidence(
+                source_kind="hook",
+                native_event_kind="read_failed",
+                quality=EvidenceQuality.INFERRED,
+            ),
+            payload={"path": "/skills/testing/SKILL.md", "reason": "failed"},
+        )
 
 
-def test_snapshot_when_turn_status_is_invalid_rejects_event() -> None:
-    completed = CanonicalEvent(
-        contract_version=CONTRACT_VERSION,
-        event_id="turn-1",
-        event_type=EventType.TURN_COMPLETED,
-        harness_id="cursor",
-        native_conversation_id="conversation-1",
-        sequence=1,
-        evidence=Evidence(source_kind="transcript", native_event_kind="turn_ended"),
-        payload={"status": "crashed"},
-    )
-
+def test_turn_completed_when_status_is_invalid_rejects_event() -> None:
     with pytest.raises(ValueError, match="canonical status"):
-        snapshot(completed)
+        CanonicalEvent(
+            contract_version=CONTRACT_VERSION,
+            event_id="turn-1",
+            event_type=EventType.TURN_COMPLETED,
+            harness_id="cursor",
+            native_conversation_id="conversation-1",
+            sequence=1,
+            evidence=Evidence(source_kind="transcript", native_event_kind="turn_ended"),
+            payload={"status": "crashed"},
+        )

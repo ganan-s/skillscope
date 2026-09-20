@@ -173,6 +173,24 @@ class TestIngestCLI(unittest.TestCase):
             ).fetchall()
             self.assertGreaterEqual(len(diags), 1)
 
+            failures = conn.execute(
+                "SELECT * FROM events WHERE event_type = 'skill.activation_failed' "
+                "AND native_conversation_id = 'conv-test-1'"
+            ).fetchall()
+            self.assertEqual(len(failures), 1)
+            payload = json.loads(failures[0]["payload"])
+            self.assertEqual(payload["reason"], "failed")
+            self.assertTrue(payload["path"].endswith("SKILL.md"))
+            self.assertNotIn("error_message", payload)
+
+            turns = conn.execute(
+                "SELECT * FROM events WHERE event_type = 'turn.completed' "
+                "AND native_conversation_id = 'conv-test-1' "
+                "ORDER BY sequence"
+            ).fetchall()
+            self.assertEqual(len(turns), 2)
+            self.assertEqual(json.loads(turns[0]["payload"])["status"], "success")
+
             conn.close()
 
     def test_no_command_prints_help(self):

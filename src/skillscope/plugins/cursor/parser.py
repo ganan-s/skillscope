@@ -134,6 +134,24 @@ def native_content(record: dict[str, Any]) -> object:
     return record.get("content")
 
 
+def native_turn_ended(record: dict[str, Any]) -> str | None:
+    """Return a canonical turn-close status from a native transcript record."""
+    candidate = record
+    message = record.get("message")
+    if (
+        record.get("type") != "turn_ended"
+        and isinstance(message, dict)
+        and message.get("type") == "turn_ended"
+    ):
+        candidate = message
+    if candidate.get("type") != "turn_ended":
+        return None
+    status = candidate.get("status", record.get("status"))
+    if status in TurnCompletionStatus:
+        return str(status)
+    return TurnCompletionStatus.UNKNOWN.value
+
+
 def native_user_text(record: dict[str, Any]) -> str | None:
     """Extract user-query text from a native transcript record.
 
@@ -482,16 +500,19 @@ def build_conversation_snapshot(
     for record in hooks:
         kind = record.value.get("event_kind")
         payload = record.value["payload"]
-        if (
-            kind not in {"read_succeeded", "read_failed"}
-            or payload.get("tool_name") not in _READ_TOOLS
-        ):
+        if kind not in {"read_succeeded", "read_failed"}:
             continue
         path = _path(payload)
         tool_id = payload.get("tool_use_id")
+        tool_name = payload.get("tool_name")
         if isinstance(tool_id, str):
             outcomes.add(tool_id)
         if kind == "read_failed":
+            is_read_tool = tool_name in _READ_TOOLS or (
+                tool_name is None and is_exact_skill_manifest(path)
+            )
+            if not is_read_tool:
+                continue
             diagnostics.append(
                 Diagnostic(
                     DiagnosticCode.READ_FAILED,
@@ -543,7 +564,7 @@ def build_conversation_snapshot(
                 )
             )
             continue
-        if path is None:
+        if tool_name not in _READ_TOOLS or path is None:
             continue
         generation = payload.get("generation_id")
         event_id = (
@@ -676,14 +697,10 @@ def build_conversation_snapshot(
         ):
             transcript_turn += 1
             continue
-        if record.value.get("type") != "turn_ended":
+        status = native_turn_ended(record.value)
+        if status is None:
             continue
-        status = record.value.get("status")
-        canonical_status = (
-            status
-            if status in TurnCompletionStatus
-            else TurnCompletionStatus.UNKNOWN.value
-        )
+        occurred = _time(record.value.get("timestamp") or record.value.get("createdAt"))
         events.append(
             CanonicalEvent(
                 contract_version,
@@ -700,8 +717,11 @@ def build_conversation_snapshot(
                     quality=EvidenceQuality.CONFIRMED,
                 ),
                 turn_index=transcript_turn if transcript_turn >= 0 else None,
-                time_provenance=TimeProvenance.MISSING,
-                payload={"status": canonical_status},
+                occurred_at=occurred,
+                time_provenance=(
+                    TimeProvenance.NATIVE if occurred else TimeProvenance.MISSING
+                ),
+                payload={"status": status},
             )
         )
 

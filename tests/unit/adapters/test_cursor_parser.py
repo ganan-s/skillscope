@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from skillscope.plugins.cursor.parser import native_content, native_user_text
+from skillscope.plugins.cursor.parser import (
+    native_content,
+    native_turn_ended,
+    native_user_text,
+)
 
 
 def test_native_user_text_from_message_content_blocks_returns_text() -> None:
@@ -35,3 +39,22 @@ def test_native_user_text_from_plain_content_string_returns_text() -> None:
 def test_native_user_text_when_content_missing_returns_none() -> None:
     assert native_user_text({"role": "user"}) is None
     assert native_user_text({"role": "user", "message": {}}) is None
+
+
+def test_native_turn_ended_from_top_level_record_returns_status() -> None:
+    assert native_turn_ended({"type": "turn_ended", "status": "error"}) == "error"
+
+
+def test_native_turn_ended_from_nested_message_returns_status() -> None:
+    assert (
+        native_turn_ended({"message": {"type": "turn_ended", "status": "success"}})
+        == "success"
+    )
+
+
+def test_native_turn_ended_when_status_is_unrecognized_returns_unknown() -> None:
+    assert native_turn_ended({"type": "turn_ended", "status": "aborted"}) == "unknown"
+
+
+def test_native_turn_ended_when_record_is_not_turn_close_returns_none() -> None:
+    assert native_turn_ended({"role": "assistant"}) is None
