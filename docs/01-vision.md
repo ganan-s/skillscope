@@ -1,6 +1,6 @@
 # 1. Vision: skill load visibility
 
-**v1 is a localhost web dashboard of closed conversations and the `SKILL.md` files they actually loaded.** It does not score skills, rewrite them, or re-read the filesystem at display time.
+**v1 is a localhost web dashboard of closed conversations and the `SKILL.md` files they actually loaded.** It does not score skills, rewrite them, or re-read the filesystem at display time. Per-conversation observational signals for skill effectiveness are specified in [skill effectiveness](08-skill-effectiveness.md).
 
 ## Problem
 
@@ -59,7 +59,7 @@ Out of scope until a later doc:
 
 - Open or in-flight sessions
 - A resident background ingest worker or live transcript watcher
-- Aggregates, critique, or write-back
+- Aggregates, critique, scores, or write-back
 - Additional harness plugins beyond Cursor
 - Re-reading skill files or repos when serving the UI
 - Cursor-native visualization (marketplace plugin, MCP-in-chat query as the dashboard, IDE webview)
@@ -159,6 +159,8 @@ The harness plugin produces events; ingest stores them as snapshots.
 | `session.closed` | Finished conversation ready to ingest |
 | `task.recorded` | User message text copied into the store |
 | `skill.activated` | Unambiguous `SKILL.md` read, with snapshot fields |
+| `skill.activation_failed` | Confirmed unsuccessful exact `SKILL.md` read |
+| `turn.completed` | Native close of one turn (`success` / `error` / `unknown`) |
 | `skill.resource_read` | Optional extra file under that skill dir; snapshot path + name |
 
 ## What ingest must freeze

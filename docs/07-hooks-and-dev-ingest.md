@@ -165,9 +165,10 @@ This is how you test the product on a developer machine:
 7. Remove `.cursor/hooks.json` when you no longer want collection
 
 Expected SQLite outcomes after a successful hooked session: `task.recorded`,
-one `skill.activated` per confirmed `SKILL.md` read, `session.closed`, and
-`read_failed` diagnostics for failed reads. Transcript-only Reads without a
-matching hook stay `read_outcome_unknown`.
+one `skill.activated` per confirmed `SKILL.md` read, `skill.activation_failed`
+plus a `read_failed` diagnostic per failed exact `SKILL.md` read,
+`turn.completed` from transcript `turn_ended`, and `session.closed`.
+Transcript-only Reads without a matching hook stay `read_outcome_unknown`.
 
 ### 3. Opt-in live golden replay
 

@@ -30,12 +30,14 @@ flowchart TD
   conversation[Conversation]
   task[Task]
   activation[Skill activation]
+  failure[Skill load failure]
   resource[Skill resource read]
   meta[Store metadata]
 
   collection --> conversation
   conversation --> task
   conversation --> activation
+  conversation --> failure
   activation --> resource
   meta
 ```
@@ -64,8 +66,8 @@ A summary is one item in the conversation collection:
 - `started_at`: optional UTC timestamp;
 - `ended_at`: optional UTC timestamp;
 - `skills`: ordered, de-duplicated display summaries for skill chips; and
-- `task_count` and `activation_count`: non-negative counts derived from the
-  stored snapshot.
+- `task_count`, `activation_count`, and `load_failure_count`: non-negative
+  counts derived from the stored snapshot.
 
 Each skill display summary contains:
 
@@ -91,7 +93,8 @@ A conversation detail resource contains:
 
 - every field in the conversation summary;
 - `tasks`: ordered user tasks;
-- `skill_activations`: ordered activation occurrences.
+- `skill_activations`: ordered activation occurrences;
+- `skill_load_failures`: ordered confirmed failed exact `SKILL.md` attempts.
 
 It does not expose source revisions, readiness decisions, transcript
 locations, hook-spool locations, native payloads, or content hashes used only
@@ -126,11 +129,29 @@ A skill activation represents one confirmed successful read of an exact
 - `source`: canonical source bucket;
 - `name`: optional parsed frontmatter name;
 - `description`: optional parsed frontmatter description;
-- `payload`: captured manifest payload state; and
-- `resource_reads`: ordered reads associated with this activation.
+- `payload`: captured manifest payload state;
+- `resource_reads`: ordered reads associated with this activation; and
+- `observations`: derived per-activation effectiveness signals, specified in
+  [skill effectiveness](08-skill-effectiveness.md).
 
 Two reads of the same path are two activation resources with distinct ids.
 Unknown, failed, denied, or timed-out read requests never appear here.
+
+### Skill load failure
+
+A skill load failure represents one confirmed unsuccessful exact `SKILL.md`
+read:
+
+- `id`: repeat-safe failure id;
+- `path`: captured concrete manifest path;
+- `source`: canonical source bucket;
+- `reason`: `failed`, `denied`, `timeout`, `interrupted`, or `unknown`;
+- `turn_index`: optional canonical turn index;
+- `sequence`: total order within the conversation snapshot;
+- `failed_at`: optional UTC timestamp; and
+- `time_provenance`: timestamp provenance.
+
+Failed attempts are not activations and have no nested resource reads.
 
 ### Skill resource read
 

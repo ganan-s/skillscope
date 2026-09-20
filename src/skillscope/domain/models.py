@@ -22,7 +22,23 @@ class EventType(enum.StrEnum):
     SESSION_CLOSED = "session.closed"
     TASK_RECORDED = "task.recorded"
     SKILL_ACTIVATED = "skill.activated"
+    SKILL_ACTIVATION_FAILED = "skill.activation_failed"
     SKILL_RESOURCE_READ = "skill.resource_read"
+    TURN_COMPLETED = "turn.completed"
+
+
+class ActivationFailureReason(enum.StrEnum):
+    FAILED = "failed"
+    DENIED = "denied"
+    TIMEOUT = "timeout"
+    INTERRUPTED = "interrupted"
+    UNKNOWN = "unknown"
+
+
+class TurnCompletionStatus(enum.StrEnum):
+    SUCCESS = "success"
+    ERROR = "error"
+    UNKNOWN = "unknown"
 
 
 class ReadinessBasis(enum.StrEnum):
@@ -130,6 +146,17 @@ class Diagnostic:
 # ---------------------------------------------------------------------------
 
 CONTRACT_VERSION = 1
+_GLOB_CHARACTERS = frozenset("*?[")
+_SKILL_MANIFEST_NAME = "SKILL.md"
+
+
+def is_exact_skill_manifest(path: object) -> bool:
+    """Return whether *path* is a concrete exact ``SKILL.md`` file."""
+    if not isinstance(path, str) or not path:
+        return False
+    if any(character in path for character in _GLOB_CHARACTERS):
+        return False
+    return path.replace("\\", "/").rsplit("/", maxsplit=1)[-1] == _SKILL_MANIFEST_NAME
 
 
 @dataclass(frozen=True)
@@ -241,14 +268,28 @@ class ConversationSnapshot:
                 path = event.payload.get("path")
                 if (
                     event.evidence.quality != EvidenceQuality.CONFIRMED
-                    or not isinstance(path, str)
-                    or path.replace("\\", "/").split("/")[-1] != "SKILL.md"
-                    or any(character in path for character in "*?[")
+                    or not is_exact_skill_manifest(path)
                 ):
                     raise ValueError(
                         "activation requires confirmed evidence for exact SKILL.md"
                     )
                 activations[event.event_id] = (event.sequence, path)
+            elif event.event_type == EventType.SKILL_ACTIVATION_FAILED:
+                path = event.payload.get("path")
+                reason = event.payload.get("reason")
+                if (
+                    event.evidence.quality != EvidenceQuality.CONFIRMED
+                    or not is_exact_skill_manifest(path)
+                ):
+                    raise ValueError(
+                        "activation failure requires confirmed exact SKILL.md"
+                    )
+                if reason not in ActivationFailureReason:
+                    raise ValueError("activation failure requires a canonical reason")
+            elif event.event_type == EventType.TURN_COMPLETED:
+                status = event.payload.get("status")
+                if status not in TurnCompletionStatus:
+                    raise ValueError("turn completion requires a canonical status")
             elif event.event_type == EventType.SKILL_RESOURCE_READ:
                 parent_id = event.payload.get("parent_activation_id")
                 if (

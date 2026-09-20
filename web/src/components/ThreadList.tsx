@@ -62,6 +62,11 @@ export function ThreadList({
                     No skills
                   </span>
                 )}
+                {conv.load_failure_count > 0 && (
+                  <span className="text-xs text-text-tertiary">
+                    {conv.load_failure_count} failed
+                  </span>
+                )}
               </div>
             </button>
           );

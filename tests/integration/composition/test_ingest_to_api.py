@@ -48,3 +48,11 @@ def test_cursor_ingest_to_api_exposes_repeated_activations(tmp_path: Path) -> No
         "tu-success-1",
         "tu-success-2",
     ]
+    assert item["load_failure_count"] == 1
+    assert [entry["id"] for entry in detail["skill_load_failures"]] == ["tu-fail-1"]
+    assert detail["skill_activations"][0]["observations"] == {
+        "resource_follow_through": False,
+        "repeated_in_conversation": True,
+        "followed_by_user_task": True,
+        "containing_turn_status": "success",
+    }

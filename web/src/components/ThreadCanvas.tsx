@@ -1,4 +1,4 @@
-import type { Conversation, SkillActivation } from "../api/types";
+import type { Conversation, SkillActivation, SkillLoadFailure } from "../api/types";
 import { buildTimeline } from "../api/timeline";
 
 interface Props {
@@ -63,6 +63,20 @@ function ActivationRow({
   );
 }
 
+function FailureRow({ failure }: { failure: SkillLoadFailure }) {
+  return (
+    <div className="mb-2 flex w-full items-center gap-2 rounded px-3 py-2 text-left">
+      <div className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-text-tertiary" />
+      <div className="min-w-0 flex-1">
+        <span className="text-sm text-text">
+          {skillBasename(failure.path)} failed to load
+        </span>
+        <span className="ml-2 text-xs text-text-tertiary">{failure.reason}</span>
+      </div>
+    </div>
+  );
+}
+
 export function ThreadCanvas({
   conversation,
   selectedActivationId,
@@ -89,6 +103,9 @@ export function ThreadCanvas({
         <div className="ml-auto flex items-center gap-3 text-xs text-text-tertiary">
           <span>{conversation.task_count} prompts</span>
           <span>{conversation.activation_count} activations</span>
+          {conversation.load_failure_count > 0 && (
+            <span>{conversation.load_failure_count} failed loads</span>
+          )}
         </div>
       </div>
 
@@ -100,7 +117,7 @@ export function ThreadCanvas({
             </p>
           )}
 
-          {timeline.map(({ task, activations }, idx) => (
+          {timeline.map(({ task, activations, loadFailures }, idx) => (
             <div key={task?.id ?? "unmatched-activations"} className={idx > 0 ? "mt-6" : ""}>
               {task ? (
                 <div className="flex items-start gap-3">
@@ -117,7 +134,7 @@ export function ThreadCanvas({
                 </p>
               )}
 
-              {activations.length > 0 ? (
+              {activations.length > 0 || loadFailures.length > 0 ? (
                 <div className="border-spine ml-[3px] mt-2 border-l pl-6">
                   {activations.map((act) => (
                     <ActivationRow
@@ -130,6 +147,9 @@ export function ThreadCanvas({
                         )
                       }
                     />
+                  ))}
+                  {loadFailures.map((failure) => (
+                    <FailureRow key={failure.id} failure={failure} />
                   ))}
                 </div>
               ) : (

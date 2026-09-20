@@ -285,6 +285,37 @@ It carries the parent activation identity, concrete resource path, native
 tool-use id, turn/sequence fields, and payload status. A reference read before
 manifest activation remains a diagnostic, not a resource event.
 
+### `skill.activation_failed`
+
+Represents a confirmed unsuccessful attempt to read an exact `SKILL.md`.
+See [skill effectiveness](08-skill-effectiveness.md).
+
+Fields:
+
+- concrete path string;
+- source bucket;
+- canonical `reason` (`failed`, `denied`, `timeout`, `interrupted`, or
+  `unknown`);
+- native tool-use id when available; and
+- turn identity and sequence.
+
+An adapter emits this event only when native evidence confirms failure and the
+path rules for `skill.activated` would otherwise apply. It is never an
+activation and cannot parent a resource read. Failed reads of other files and
+unknown-outcome requests remain diagnostics.
+
+### `turn.completed`
+
+Represents the native close of one turn, not the conversation.
+
+Fields:
+
+- optional turn index; and
+- canonical `status` (`success`, `error`, or `unknown`).
+
+For Cursor v1 this is transcript `type: turn_ended`. Missing turn-close records
+produce no event.
+
 ## Payload snapshot
 
 A payload snapshot has:
@@ -340,7 +371,8 @@ The observed files did not include tool-result records. Consequently:
 - conversation id comes from the transcript UUID/path;
 - user records feed `task.recorded`;
 - assistant read requests can produce `read_outcome_unknown` diagnostics;
-- `turn_ended` closes a turn, not the resumable conversation; and
+- `turn_ended` produces `turn.completed` and closes a turn, not the
+  resumable conversation; and
 - transcript read requests never directly produce `skill.activated`.
 
 Workspace path, title, and structured per-tool timestamps were not consistently
@@ -374,8 +406,9 @@ When transcript and hook records overlap:
 4. exact native values win over derived fallbacks; and
 5. no source may overwrite a present value with missing data.
 
-Failures and unknown requests are retained only as diagnostics. They never
-become activations through merging.
+Unknown requests are retained only as diagnostics. Confirmed failed exact
+`SKILL.md` reads emit `skill.activation_failed` and a `read_failed` diagnostic.
+They never become activations through merging.
 
 ## Source buckets
 
@@ -409,6 +442,7 @@ fixtures:
 1. A confirmed successful exact `SKILL.md` activation produces one event.
 2. A repeated confirmed activation produces a second, stable event.
 3. Failure, timeout, denial, or unknown outcome produces no activation.
+   Confirmed failed exact `SKILL.md` reads also produce `skill.activation_failed`.
 4. Negative filename, directory, glob, grep, edit, and shell cases produce no
    activation.
 5. Missing payload preserves path and marks status `unavailable`.

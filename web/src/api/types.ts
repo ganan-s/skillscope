@@ -17,6 +17,7 @@ export interface ConversationSummary {
   skills: SkillSummary[];
   task_count: number;
   activation_count: number;
+  load_failure_count: number;
 }
 
 export interface ConversationPage {
@@ -42,6 +43,24 @@ export interface SkillResourceRead {
   payload: Payload;
 }
 
+export interface EffectivenessObservations {
+  resource_follow_through: boolean;
+  repeated_in_conversation: boolean;
+  followed_by_user_task: boolean;
+  containing_turn_status: "success" | "error" | "unknown";
+}
+
+export interface SkillLoadFailure {
+  id: string;
+  path: string;
+  source: string;
+  reason: "failed" | "denied" | "timeout" | "interrupted" | "unknown";
+  turn_index: number | null;
+  sequence: number;
+  failed_at: string | null;
+  time_provenance: string;
+}
+
 export interface SkillActivation {
   id: string;
   task_id: string | null;
@@ -55,6 +74,7 @@ export interface SkillActivation {
   description: string | null;
   payload: Payload;
   resource_reads: SkillResourceRead[];
+  observations: EffectivenessObservations;
 }
 
 export interface Task {
@@ -68,6 +88,7 @@ export interface Task {
 export interface Conversation extends ConversationSummary {
   tasks: Task[];
   skill_activations: SkillActivation[];
+  skill_load_failures: SkillLoadFailure[];
 }
 
 export interface IngestSummary {

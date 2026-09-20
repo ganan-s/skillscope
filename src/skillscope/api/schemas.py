@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 SkillSource = Literal["user", "cursor-builtin", "agents", "project", "unknown"]
 TimeProvenance = Literal["native", "collector_observed", "derived", "missing"]
+LoadFailureReason = Literal["failed", "denied", "timeout", "interrupted", "unknown"]
+TurnCompletionStatus = Literal["success", "error", "unknown"]
 
 
 class ApiModel(BaseModel):
@@ -38,6 +40,24 @@ class ResourceReadResponse(ApiModel):
     payload: PayloadResponse
 
 
+class EffectivenessObservationsResponse(ApiModel):
+    resource_follow_through: bool
+    repeated_in_conversation: bool
+    followed_by_user_task: bool
+    containing_turn_status: TurnCompletionStatus
+
+
+class SkillLoadFailureResponse(ApiModel):
+    id: str
+    path: str
+    source: SkillSource
+    reason: LoadFailureReason
+    turn_index: int | None
+    sequence: int
+    failed_at: datetime | None
+    time_provenance: TimeProvenance
+
+
 class SkillActivationResponse(ApiModel):
     id: str
     task_id: str | None
@@ -51,6 +71,7 @@ class SkillActivationResponse(ApiModel):
     description: str | None
     payload: PayloadResponse
     resource_reads: list[ResourceReadResponse]
+    observations: EffectivenessObservationsResponse
 
 
 class SkillSummaryResponse(ApiModel):
@@ -78,11 +99,13 @@ class ConversationSummaryResponse(ApiModel):
     skills: list[SkillSummaryResponse]
     task_count: int
     activation_count: int
+    load_failure_count: int
 
 
 class ConversationResponse(ConversationSummaryResponse):
     tasks: list[TaskResponse]
     skill_activations: list[SkillActivationResponse]
+    skill_load_failures: list[SkillLoadFailureResponse]
 
 
 class ConversationPageResponse(ApiModel):

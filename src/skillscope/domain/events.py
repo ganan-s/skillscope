@@ -6,6 +6,7 @@ subset commonly needed when constructing events inside harness adapters.
 
 from skillscope.domain.models import (  # noqa: F401
     CONTRACT_VERSION,
+    ActivationFailureReason,
     CanonicalEvent,
     ConversationSnapshot,
     Diagnostic,
@@ -19,4 +20,6 @@ from skillscope.domain.models import (  # noqa: F401
     SourceBucket,
     SourceRevision,
     TimeProvenance,
+    TurnCompletionStatus,
+    is_exact_skill_manifest,
 )

@@ -99,9 +99,11 @@ def test_api_when_store_contains_no_skills_exposes_meta_list_and_detail(
     assert listing.status_code == 200
     assert listing.json()["items"][0]["skills"] == []
     assert listing.json()["items"][0]["task_count"] == 1
+    assert listing.json()["items"][0]["load_failure_count"] == 0
     assert detail.status_code == 200
     assert detail.json()["tasks"][0]["text"] == "Explain the repository."
     assert detail.json()["skill_activations"] == []
+    assert detail.json()["skill_load_failures"] == []
 
 
 def test_api_reads_legacy_row_without_persisted_public_id(tmp_path: Path) -> None:
@@ -395,3 +397,128 @@ def test_api_preserves_repeated_activations_and_nested_resource_reads(
         "activation-2",
     ]
     assert body["skill_activations"][0]["resource_reads"][0]["id"] == "resource-1"
+    assert body["skill_activations"][0]["observations"] == {
+        "resource_follow_through": True,
+        "repeated_in_conversation": True,
+        "followed_by_user_task": False,
+        "containing_turn_status": "unknown",
+    }
+    assert body["skill_activations"][1]["observations"]["resource_follow_through"] is (
+        False
+    )
+    assert body["load_failure_count"] == 0
+    assert body["skill_load_failures"] == []
+
+
+def test_api_exposes_failed_loads_and_turn_observations(tmp_path: Path) -> None:
+    db_path = tmp_path / "skillscope.sqlite"
+    manifest = "---\nname: testing\n---\n"
+    manifest_payload = {
+        "status": "captured",
+        "content": manifest,
+        "sha256": hashlib.sha256(manifest.encode()).hexdigest(),
+        "byte_length": len(manifest.encode()),
+        "unavailable_reason": None,
+    }
+    common = {
+        "contract_version": CONTRACT_VERSION,
+        "harness_id": "cursor",
+        "native_conversation_id": "conversation-effectiveness",
+        "time_provenance": TimeProvenance.COLLECTOR_OBSERVED,
+        "occurred_at": NOW,
+    }
+    hook_evidence = Evidence(source_kind="hook", native_event_kind="postToolUse")
+    snapshot = ConversationSnapshot(
+        contract_version=CONTRACT_VERSION,
+        harness_id="cursor",
+        native_conversation_id="conversation-effectiveness",
+        source_revision=SourceRevision("revision-1", NOW),
+        readiness_basis=ReadinessBasis.NATIVE_END,
+        events=(
+            CanonicalEvent(
+                **common,
+                event_id="task-1",
+                event_type=EventType.TASK_RECORDED,
+                sequence=1,
+                turn_index=0,
+                evidence=hook_evidence,
+                payload={"raw_text": "Load the testing skill."},
+            ),
+            CanonicalEvent(
+                **common,
+                event_id="activation-1",
+                event_type=EventType.SKILL_ACTIVATED,
+                sequence=2,
+                turn_index=0,
+                evidence=hook_evidence,
+                payload={
+                    "path": "/project/.cursor/skills/testing/SKILL.md",
+                    "source_bucket": "project",
+                    "name": "testing",
+                    "payload_snapshot": manifest_payload,
+                },
+            ),
+            CanonicalEvent(
+                **common,
+                event_id="fail-1",
+                event_type=EventType.SKILL_ACTIVATION_FAILED,
+                sequence=3,
+                turn_index=0,
+                evidence=Evidence(
+                    source_kind="hook",
+                    native_event_kind="read_failed",
+                ),
+                payload={
+                    "path": "/project/.cursor/skills/missing/SKILL.md",
+                    "source_bucket": "project",
+                    "reason": "failed",
+                },
+            ),
+            CanonicalEvent(
+                **common,
+                event_id="turn-1",
+                event_type=EventType.TURN_COMPLETED,
+                sequence=4,
+                turn_index=0,
+                evidence=Evidence(
+                    source_kind="transcript",
+                    native_event_kind="turn_ended",
+                ),
+                payload={"status": "error"},
+            ),
+            CanonicalEvent(
+                **common,
+                event_id="task-2",
+                event_type=EventType.TASK_RECORDED,
+                sequence=5,
+                turn_index=1,
+                evidence=hook_evidence,
+                payload={"raw_text": "Try again."},
+            ),
+        ),
+    )
+    conn = connect_writable(db_path)
+    migrate(conn)
+    writer = SQLiteSnapshotWriter(conn)
+    writer.persist(snapshot)
+    writer.record_ingest(
+        completed_at=NOW,
+        summary=IngestMetadata(1, 0, 0, 0, 0),
+    )
+    conn.close()
+
+    body = (
+        TestClient(build_api_app(db_path))
+        .get(f"/api/v1/conversations/{snapshot.public_id}")
+        .json()
+    )
+
+    assert body["load_failure_count"] == 1
+    assert body["skill_load_failures"][0]["id"] == "fail-1"
+    assert body["skill_load_failures"][0]["reason"] == "failed"
+    assert body["skill_activations"][0]["observations"] == {
+        "resource_follow_through": False,
+        "repeated_in_conversation": False,
+        "followed_by_user_task": True,
+        "containing_turn_status": "error",
+    }

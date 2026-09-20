@@ -59,12 +59,19 @@ def test_snapshot_when_golden_is_replayed_emits_expected_canonical_events(
         for event_type in (
             EventType.TASK_RECORDED,
             EventType.SKILL_ACTIVATED,
+            EventType.SKILL_ACTIVATION_FAILED,
+            EventType.TURN_COMPLETED,
             EventType.SESSION_CLOSED,
         )
     }
     expected_types = expected["canonical_event_types"]
     assert counts[EventType.TASK_RECORDED] == expected_types["task.recorded"]
     assert counts[EventType.SKILL_ACTIVATED] == expected_types["skill.activated"]
+    assert (
+        counts[EventType.SKILL_ACTIVATION_FAILED]
+        == expected_types["skill.activation_failed"]
+    )
+    assert counts[EventType.TURN_COMPLETED] == expected_types["turn.completed"]
     assert counts[EventType.SESSION_CLOSED] == expected_types["session.closed"]
 
     tasks = [
@@ -88,6 +95,10 @@ def test_snapshot_when_golden_is_replayed_emits_expected_canonical_events(
         if diagnostic.code == DiagnosticCode.READ_FAILED
     ]
     assert failed, "failed SKILL.md read must remain a diagnostic"
+    assert any(
+        event.event_type == EventType.SKILL_ACTIVATION_FAILED
+        for event in snapshot.events
+    )
     assert not any(
         event.event_type == EventType.SKILL_ACTIVATED
         and "missing" in str(event.payload.get("path"))

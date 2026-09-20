@@ -200,6 +200,7 @@ components:
         - skills
         - task_count
         - activation_count
+        - load_failure_count
       properties:
         id:
           type: string
@@ -238,6 +239,10 @@ components:
         activation_count:
           type: integer
           minimum: 0
+        load_failure_count:
+          type: integer
+          minimum: 0
+          description: Number of confirmed failed exact SKILL.md reads.
     Conversation:
       type: object
       additionalProperties: false
@@ -251,8 +256,10 @@ components:
         - skills
         - task_count
         - activation_count
+        - load_failure_count
         - tasks
         - skill_activations
+        - skill_load_failures
       properties:
         id:
           type: string
@@ -287,6 +294,10 @@ components:
         activation_count:
           type: integer
           minimum: 0
+        load_failure_count:
+          type: integer
+          minimum: 0
+          description: Number of confirmed failed exact SKILL.md reads.
         tasks:
           type: array
           items:
@@ -295,6 +306,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SkillActivation"
+        skill_load_failures:
+          type: array
+          description: Confirmed failed exact SKILL.md reads in snapshot order.
+          items:
+            $ref: "#/components/schemas/SkillLoadFailure"
     SkillSummary:
       type: object
       additionalProperties: false
@@ -357,6 +373,7 @@ components:
         - description
         - payload
         - resource_reads
+        - observations
       properties:
         id:
           type: string
@@ -405,6 +422,70 @@ components:
           description: Resource reads associated with this activation.
           items:
             $ref: "#/components/schemas/SkillResourceRead"
+        observations:
+          $ref: "#/components/schemas/EffectivenessObservations"
+    EffectivenessObservations:
+      description: |
+        Derived evidence flags for one confirmed skill activation. These are
+        observational signals, not a skill score.
+      type: object
+      additionalProperties: false
+      required:
+        - resource_follow_through
+        - repeated_in_conversation
+        - followed_by_user_task
+        - containing_turn_status
+      properties:
+        resource_follow_through:
+          type: boolean
+          description: True when this activation has at least one nested resource read.
+        repeated_in_conversation:
+          type: boolean
+          description: True when another activation in this conversation has the same path.
+        followed_by_user_task:
+          type: boolean
+          description: True when a later user task exists after this activation's turn.
+        containing_turn_status:
+          $ref: "#/components/schemas/TurnCompletionStatus"
+    SkillLoadFailure:
+      description: One confirmed unsuccessful exact SKILL.md read.
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - path
+        - source
+        - reason
+        - turn_index
+        - sequence
+        - failed_at
+        - time_provenance
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Repeat-safe failed-load occurrence id.
+        path:
+          type: string
+          minLength: 1
+          description: Historical concrete SKILL.md path.
+        source:
+          $ref: "#/components/schemas/SkillSource"
+        reason:
+          $ref: "#/components/schemas/LoadFailureReason"
+        turn_index:
+          description: Canonical turn index, or null when unavailable.
+          anyOf:
+            - type: integer
+              minimum: 0
+            - type: "null"
+        sequence:
+          type: integer
+          minimum: 0
+        failed_at:
+          $ref: "#/components/schemas/NullableTimestamp"
+        time_provenance:
+          $ref: "#/components/schemas/TimeProvenance"
     SkillResourceRead:
       type: object
       additionalProperties: false
@@ -584,6 +665,20 @@ components:
         - agents
         - project
         - unknown
+    LoadFailureReason:
+      type: string
+      enum:
+        - failed
+        - denied
+        - timeout
+        - interrupted
+        - unknown
+    TurnCompletionStatus:
+      type: string
+      enum:
+        - success
+        - error
+        - unknown
     TimeProvenance:
       type: string
       enum:
@@ -615,6 +710,7 @@ components:
                 activation_count: 2
             task_count: 2
             activation_count: 2
+            load_failure_count: 0
         next_cursor: null
         limit: 50
     ConversationPageWithoutSkills:
@@ -629,6 +725,7 @@ components:
             skills: []
             task_count: 1
             activation_count: 0
+            load_failure_count: 0
         next_cursor: null
         limit: 50
     ConversationWithCapturedSkill:
@@ -647,6 +744,7 @@ components:
             activation_count: 1
         task_count: 1
         activation_count: 1
+        load_failure_count: 0
         tasks:
           - id: task_generation-1
             turn_index: 0
@@ -675,6 +773,12 @@ components:
               byte_length: 131
               unavailable_reason: null
             resource_reads: []
+            observations:
+              resource_follow_through: false
+              repeated_in_conversation: false
+              followed_by_user_task: false
+              containing_turn_status: unknown
+        skill_load_failures: []
     PopulatedStoreMetadata:
       value:
         api_version: v1

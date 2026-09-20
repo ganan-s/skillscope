@@ -140,6 +140,12 @@ class TestContractConformance(unittest.TestCase):
         self.assertEqual(len(activations), 0)
         fail_diags = [d for d in diags if d.code == DiagnosticCode.READ_FAILED]
         self.assertEqual(len(fail_diags), 1)
+        failures = [
+            e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATION_FAILED
+        ]
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(failures[0].payload["reason"], "failed")
+        self.assertNotIn("error_message", failures[0].payload)
 
     def test_4_negative_cases_produce_no_activation(self):
         """Case 4: Non-manifest operations produce no activation."""
@@ -324,6 +330,13 @@ class TestOfflineReadIsNotActivation(unittest.TestCase):
             d for d in diags if d.code == DiagnosticCode.READ_OUTCOME_UNKNOWN
         ]
         self.assertEqual(len(unknown_diags), 1)
+        failures = [
+            e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATION_FAILED
+        ]
+        self.assertEqual(failures, [])
+        turns = [e for e in snap.events if e.event_type == EventType.TURN_COMPLETED]
+        self.assertEqual(len(turns), 1)
+        self.assertEqual(turns[0].payload["status"], "success")
 
 
 class TestResourceReads(unittest.TestCase):

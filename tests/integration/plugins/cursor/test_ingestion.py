@@ -125,6 +125,15 @@ def test_parser_with_failed_read_emits_diagnostic_not_activation(
         event.event_type == EventType.SKILL_ACTIVATED for event in snapshot.events
     )
     assert any(item.code == DiagnosticCode.READ_FAILED for item in diagnostics)
+    failures = [
+        event
+        for event in snapshot.events
+        if event.event_type == EventType.SKILL_ACTIVATION_FAILED
+    ]
+    assert [event.event_id for event in failures] == ["failed-1"]
+    assert failures[0].payload["path"] == "/skills/testing/SKILL.md"
+    assert failures[0].payload["reason"] == "failed"
+    assert "error_message" not in failures[0].payload
 
 
 def test_parser_with_malformed_frontmatter_preserves_missing_metadata(
@@ -341,6 +350,95 @@ def test_plugin_discover_skips_subagent_transcripts(tmp_path: Path) -> None:
 
     assert parent_id in ids
     assert sub_id not in ids
+
+
+def test_parser_with_failed_resource_read_does_not_emit_activation_failure(
+    tmp_path: Path,
+) -> None:
+    spool = write_spool(
+        tmp_path,
+        [
+            hook(
+                "read_failed",
+                tool_id="failed-resource",
+                path="/skills/testing/reference.md",
+                snapshot=None,
+            )
+        ],
+    )
+
+    snapshot, diagnostics = build_conversation_snapshot(
+        "conversation-1",
+        None,
+        spool,
+    )
+
+    assert not any(
+        event.event_type == EventType.SKILL_ACTIVATION_FAILED
+        for event in snapshot.events
+    )
+    assert any(item.code == DiagnosticCode.READ_FAILED for item in diagnostics)
+
+
+def test_parser_with_interrupted_skill_read_maps_canonical_reason(
+    tmp_path: Path,
+) -> None:
+    record = hook(
+        "read_failed",
+        tool_id="failed-interrupt",
+        path="/skills/testing/SKILL.md",
+        snapshot=None,
+    )
+    record["payload"]["is_interrupt"] = True
+    spool = write_spool(tmp_path, [record])
+
+    snapshot, _ = build_conversation_snapshot("conversation-1", None, spool)
+
+    failure = next(
+        event
+        for event in snapshot.events
+        if event.event_type == EventType.SKILL_ACTIVATION_FAILED
+    )
+    assert failure.payload["reason"] == "interrupted"
+
+
+def test_parser_with_turn_ended_emits_turn_completed(tmp_path: Path) -> None:
+    transcript_dir = tmp_path / "conversation-1"
+    transcript_dir.mkdir()
+    (transcript_dir / "conversation-1.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "role": "user",
+                        "message": {
+                            "content": [
+                                {"type": "text", "text": "Explain the repository."}
+                            ]
+                        },
+                    }
+                ),
+                json.dumps({"type": "turn_ended", "status": "error"}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    snapshot, _ = build_conversation_snapshot(
+        "conversation-1",
+        transcript_dir,
+        None,
+    )
+
+    turns = [
+        event
+        for event in snapshot.events
+        if event.event_type == EventType.TURN_COMPLETED
+    ]
+    assert len(turns) == 1
+    assert turns[0].turn_index == 0
+    assert turns[0].payload["status"] == "error"
 
 
 def test_plugin_with_active_spool_only_source_defers_ingest(tmp_path: Path) -> None:
