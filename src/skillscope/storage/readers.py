@@ -5,11 +5,12 @@ from __future__ import annotations
 import base64
 import json
 import sqlite3
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from skillscope.application.effectiveness import observe_activation
 from skillscope.application.queries import (
     ConversationDetail,
     ConversationPage,
@@ -19,6 +20,7 @@ from skillscope.application.queries import (
     PageRequest,
     Payload,
     SkillActivation,
+    SkillLoadFailure,
     SkillResourceRead,
     SkillSummary,
     StoreError,
@@ -36,6 +38,7 @@ from skillscope.storage.connection import (
 
 _SKILL_SOURCES = {"user", "cursor-builtin", "agents", "project", "unknown"}
 _TIME_PROVENANCE = {"native", "collector_observed", "derived", "missing"}
+_FAILURE_REASONS = {"failed", "denied", "timeout", "interrupted", "unknown"}
 _CONVERSATION_SELECT = """
 SELECT conversations.*,
        ended_at IS NULL AS ended_missing,
@@ -188,10 +191,12 @@ class SQLiteReadRepository:
             events = self._events(conn, row["id"])
             tasks = self._tasks(events)
             activations = self._activations(events, tasks)
+            failures = self._load_failures(events)
             return ConversationDetail(
                 **summary.__dict__,
                 tasks=tasks,
                 skill_activations=activations,
+                skill_load_failures=failures,
             )
         except (sqlite3.Error, ValueError, TypeError, KeyError) as exc:
             raise StoreError("store cannot be read") from exc
@@ -260,6 +265,7 @@ class SQLiteReadRepository:
         events = self._events(conn, row["id"])
         tasks = self._tasks(events)
         activations = self._activations(events, tasks)
+        failures = self._load_failures(events)
         grouped: OrderedDict[tuple[str, str], list[SkillActivation]] = OrderedDict()
         for activation in activations:
             grouped.setdefault(
@@ -285,6 +291,7 @@ class SQLiteReadRepository:
             skills=skills,
             task_count=len(tasks),
             activation_count=len(activations),
+            load_failure_count=len(failures),
         )
 
     @staticmethod
@@ -321,11 +328,54 @@ class SQLiteReadRepository:
         return tuple(sorted(tasks, key=lambda task: task.turn_index))
 
     @staticmethod
+    def _turn_statuses(events: list[dict[str, Any]]) -> dict[int, str]:
+        statuses: dict[int, str] = {}
+        for event in events:
+            if event["event_type"] != "turn.completed":
+                continue
+            turn_index = event["turn_index"]
+            status = event["payload"].get("status")
+            if turn_index is None or not isinstance(status, str):
+                continue
+            statuses[turn_index] = status
+        return statuses
+
+    @staticmethod
+    def _load_failures(events: list[dict[str, Any]]) -> tuple[SkillLoadFailure, ...]:
+        failures: list[SkillLoadFailure] = []
+        for event in events:
+            if event["event_type"] != "skill.activation_failed":
+                continue
+            body = event["payload"]
+            reason = body.get("reason")
+            failures.append(
+                SkillLoadFailure(
+                    id=event["event_id"],
+                    path=body["path"],
+                    source=_source(
+                        body.get("source_bucket", body.get("source", "unknown"))
+                    ),
+                    reason=reason if reason in _FAILURE_REASONS else "unknown",
+                    turn_index=event["turn_index"],
+                    sequence=event["sequence"],
+                    failed_at=_datetime(event["occurred_at"]),
+                    time_provenance=_time_provenance(event["time_provenance"]),
+                )
+            )
+        return tuple(failures)
+
+    @staticmethod
     def _activations(
         events: list[dict[str, Any]],
         tasks: tuple[Task, ...],
     ) -> tuple[SkillActivation, ...]:
         task_by_turn = {task.turn_index: task.id for task in tasks}
+        path_counts = Counter(
+            event["payload"].get("path")
+            for event in events
+            if event["event_type"] == "skill.activated"
+        )
+        turn_statuses = SQLiteReadRepository._turn_statuses(events)
         resources: dict[str, list[SkillResourceRead]] = {}
         for event in events:
             if event["event_type"] != "skill.resource_read":
@@ -353,15 +403,23 @@ class SQLiteReadRepository:
                 continue
             body = event["payload"]
             activation_id = event["event_id"]
+            path = body["path"]
+            turn_index = event["turn_index"]
+            resource_reads = tuple(resources.get(activation_id, ()))
+            subsequent_tasks = (
+                sum(1 for task in tasks if task.turn_index > turn_index)
+                if turn_index is not None
+                else 0
+            )
             activations.append(
                 SkillActivation(
                     id=activation_id,
                     task_id=task_by_turn.get(event["turn_index"]),
-                    turn_index=event["turn_index"],
+                    turn_index=turn_index,
                     sequence=event["sequence"],
                     activated_at=_datetime(event["occurred_at"]),
                     time_provenance=_time_provenance(event["time_provenance"]),
-                    path=body["path"],
+                    path=path,
                     source=_source(
                         body.get("source_bucket", body.get("source", "unknown"))
                     ),
@@ -373,7 +431,14 @@ class SQLiteReadRepository:
                     payload=_payload(
                         body.get("payload_snapshot") or body.get("payload")
                     ),
-                    resource_reads=tuple(resources.get(activation_id, ())),
+                    resource_reads=resource_reads,
+                    observations=observe_activation(
+                        turn_index=turn_index,
+                        resource_read_count=len(resource_reads),
+                        same_path_activation_count=path_counts[path],
+                        subsequent_task_count=subsequent_tasks,
+                        turn_status=turn_statuses.get(turn_index),
+                    ),
                 )
             )
         return tuple(activations)

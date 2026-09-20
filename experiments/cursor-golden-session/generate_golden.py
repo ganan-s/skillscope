@@ -369,7 +369,10 @@ def sanitize_transcript(
     return records
 
 
-def expected_facts(spool: list[dict[str, Any]]) -> dict[str, Any]:
+def expected_facts(
+    spool: list[dict[str, Any]],
+    transcript: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     kinds = Counter(
         str(record.get("event_kind"))
         for record in spool
@@ -382,12 +385,17 @@ def expected_facts(spool: list[dict[str, Any]]) -> dict[str, Any]:
         and isinstance(record.get("payload"), dict)
         and isinstance(record["payload"].get("tool_use_id"), str)
     ]
+    turn_completed = sum(
+        1 for record in (transcript or []) if record.get("type") == "turn_ended"
+    )
     return {
         "conversation_id": STABLE_CONVERSATION_ID,
         "spool_event_kinds": dict(kinds),
         "canonical_event_types": {
             "task.recorded": kinds["task_submitted"],
             "skill.activated": kinds["read_succeeded"],
+            "skill.activation_failed": kinds["read_failed"],
+            "turn.completed": turn_completed,
             "session.closed": 1,
         },
         "diagnostic_codes": ["read_failed"],
@@ -416,7 +424,7 @@ def write_golden(
         encoding="utf-8",
     )
     expected_path.write_text(
-        json.dumps(expected_facts(spool), indent=2, sort_keys=True) + "\n",
+        json.dumps(expected_facts(spool, transcript), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return output

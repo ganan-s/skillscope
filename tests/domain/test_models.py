@@ -154,6 +154,11 @@ class TestEnumValues(unittest.TestCase):
         self.assertEqual(EventType.SESSION_CLOSED.value, "session.closed")
         self.assertEqual(EventType.TASK_RECORDED.value, "task.recorded")
         self.assertEqual(EventType.SKILL_ACTIVATED.value, "skill.activated")
+        self.assertEqual(
+            EventType.SKILL_ACTIVATION_FAILED.value,
+            "skill.activation_failed",
+        )
+        self.assertEqual(EventType.TURN_COMPLETED.value, "turn.completed")
 
     def test_source_buckets(self):
         self.assertEqual(SourceBucket.CURSOR_BUILTIN.value, "cursor-builtin")

@@ -163,6 +163,8 @@ def test_generate_when_capture_is_complete_writes_stable_golden(tmp_path: Path) 
     assert expected["task_text"] == STABLE_PROMPT
     assert expected["activation_ids"] == ["tu-success-1", "tu-success-2"]
     assert expected["canonical_event_types"]["skill.activated"] == 2
+    assert expected["canonical_event_types"]["skill.activation_failed"] == 1
+    assert expected["canonical_event_types"]["turn.completed"] == 1
 
     hooks = [
         json.loads(line)

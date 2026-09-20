@@ -13,6 +13,7 @@ from typing import Any
 
 from skillscope.domain.models import (
     CONTRACT_VERSION,
+    ActivationFailureReason,
     CanonicalEvent,
     ConversationSnapshot,
     Diagnostic,
@@ -25,6 +26,8 @@ from skillscope.domain.models import (
     SourceBucket,
     SourceRevision,
     TimeProvenance,
+    TurnCompletionStatus,
+    is_exact_skill_manifest,
 )
 
 _GLOBS = frozenset("*?[")
@@ -306,11 +309,33 @@ def _id(prefix: str, conversation_id: str, source: str) -> str:
     return f"{prefix}-{digest[:24]}"
 
 
-def _evidence(record: _Record, payload: dict[str, Any]) -> Evidence:
+def _failure_reason(payload: dict[str, Any]) -> str:
+    if payload.get("is_interrupt") is True:
+        return ActivationFailureReason.INTERRUPTED.value
+    failure_type = payload.get("failure_type")
+    if not isinstance(failure_type, str):
+        return ActivationFailureReason.FAILED.value
+    lowered = failure_type.lower()
+    if "timeout" in lowered:
+        return ActivationFailureReason.TIMEOUT.value
+    if "denied" in lowered or "permission" in lowered:
+        return ActivationFailureReason.DENIED.value
+    if "interrupt" in lowered:
+        return ActivationFailureReason.INTERRUPTED.value
+    return ActivationFailureReason.FAILED.value
+
+
+def _evidence(
+    record: _Record,
+    payload: dict[str, Any],
+    *,
+    native_event_kind: str | None = None,
+) -> Evidence:
     tool_id = payload.get("tool_use_id")
+    kind = native_event_kind or record.value.get("event_kind")
     return Evidence(
         source_kind="hook",
-        native_event_kind="read_succeeded",
+        native_event_kind=(kind if isinstance(kind, str) else "read_succeeded"),
         native_event_id=tool_id if isinstance(tool_id, str) else None,
         redacted_locator=record.locator,
         record_position=record.position,
@@ -475,6 +500,48 @@ def build_conversation_snapshot(
                     record_position=record.position,
                 )
             )
+            if not is_exact_skill_manifest(path):
+                continue
+            generation = payload.get("generation_id")
+            event_id = (
+                tool_id
+                if isinstance(tool_id, str) and tool_id
+                else _id("fail", conversation_id, f"hook:{record.position}")
+            )
+            occurred = _time(record.value.get("captured_at"))
+            events.append(
+                CanonicalEvent(
+                    contract_version,
+                    event_id,
+                    EventType.SKILL_ACTIVATION_FAILED,
+                    "cursor",
+                    conversation_id,
+                    0,
+                    _evidence(record, payload, native_event_kind="read_failed"),
+                    native_turn_id=(
+                        generation if isinstance(generation, str) else None
+                    ),
+                    turn_index=generation_turns.get(generation),
+                    occurred_at=occurred,
+                    time_provenance=(
+                        TimeProvenance.COLLECTOR_OBSERVED
+                        if occurred
+                        else TimeProvenance.MISSING
+                    ),
+                    payload={
+                        "path": path,
+                        "source_bucket": infer_source_bucket(
+                            path,
+                            workspace_roots=workspaces,
+                            user_skill_roots=user_skill_roots,
+                        ).value,
+                        "native_tool_use_id": (
+                            tool_id if isinstance(tool_id, str) else None
+                        ),
+                        "reason": _failure_reason(payload),
+                    },
+                )
+            )
             continue
         if path is None:
             continue
@@ -501,7 +568,7 @@ def build_conversation_snapshot(
                 else TimeProvenance.MISSING
             ),
         }
-        if PurePath(path).name == "SKILL.md":
+        if is_exact_skill_manifest(path):
             captured, available = _snapshot(record.value.get("skill_manifest_snapshot"))
             event_payload: dict[str, Any] = {
                 "path": path,
@@ -600,6 +667,43 @@ def build_conversation_snapshot(
                         record_position=record.position,
                     )
                 )
+
+    transcript_turn = -1
+    for record in transcripts:
+        if (
+            record.value.get("role") == "user"
+            and native_user_text(record.value) is not None
+        ):
+            transcript_turn += 1
+            continue
+        if record.value.get("type") != "turn_ended":
+            continue
+        status = record.value.get("status")
+        canonical_status = (
+            status
+            if status in TurnCompletionStatus
+            else TurnCompletionStatus.UNKNOWN.value
+        )
+        events.append(
+            CanonicalEvent(
+                contract_version,
+                _id("turn", conversation_id, f"{record.locator}:{record.position}"),
+                EventType.TURN_COMPLETED,
+                "cursor",
+                conversation_id,
+                0,
+                Evidence(
+                    "transcript",
+                    "turn_ended",
+                    redacted_locator=record.locator,
+                    record_position=record.position,
+                    quality=EvidenceQuality.CONFIRMED,
+                ),
+                turn_index=transcript_turn if transcript_turn >= 0 else None,
+                time_provenance=TimeProvenance.MISSING,
+                payload={"status": canonical_status},
+            )
+        )
 
     starts = [r for r in hooks if r.value.get("event_kind") == "session_started"]
     ends = [r for r in hooks if r.value.get("event_kind") == "session_ended"]

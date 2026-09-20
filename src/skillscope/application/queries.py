@@ -54,6 +54,14 @@ class Payload:
 
 
 @dataclass(frozen=True)
+class EffectivenessObservations:
+    resource_follow_through: bool
+    repeated_in_conversation: bool
+    followed_by_user_task: bool
+    containing_turn_status: str
+
+
+@dataclass(frozen=True)
 class SkillResourceRead:
     id: str
     path: str
@@ -77,6 +85,24 @@ class SkillActivation:
     description: str | None
     payload: Payload
     resource_reads: tuple[SkillResourceRead, ...] = ()
+    observations: EffectivenessObservations = EffectivenessObservations(
+        resource_follow_through=False,
+        repeated_in_conversation=False,
+        followed_by_user_task=False,
+        containing_turn_status="unknown",
+    )
+
+
+@dataclass(frozen=True)
+class SkillLoadFailure:
+    id: str
+    path: str
+    source: str
+    reason: str
+    turn_index: int | None
+    sequence: int
+    failed_at: datetime | None
+    time_provenance: str
 
 
 @dataclass(frozen=True)
@@ -107,12 +133,14 @@ class ConversationSummary:
     skills: tuple[SkillSummary, ...]
     task_count: int
     activation_count: int
+    load_failure_count: int
 
 
 @dataclass(frozen=True)
 class ConversationDetail(ConversationSummary):
     tasks: tuple[Task, ...]
     skill_activations: tuple[SkillActivation, ...]
+    skill_load_failures: tuple[SkillLoadFailure, ...] = ()
 
 
 @dataclass(frozen=True)

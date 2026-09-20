@@ -65,6 +65,34 @@ export function EvidenceInspector({ activation, onClose }: Props) {
           <MetaRow label="Sequence" value={String(activation.sequence)} />
         </dl>
 
+        <div className="mt-6">
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-widest text-text-tertiary">
+            Observations
+          </h4>
+          <div className="space-y-3">
+            <MetaRow
+              label="Resource file read"
+              value={
+                activation.observations.resource_follow_through ? "Yes" : "No"
+              }
+            />
+            <MetaRow
+              label="Loaded again in this thread"
+              value={
+                activation.observations.repeated_in_conversation ? "Yes" : "No"
+              }
+            />
+            <MetaRow
+              label="Later prompt recorded"
+              value={activation.observations.followed_by_user_task ? "Yes" : "No"}
+            />
+            <MetaRow
+              label="Turn closed"
+              value={activation.observations.containing_turn_status}
+            />
+          </div>
+        </div>
+
         {/* Payload */}
         <section className="mt-5">
           <h3 className="sticky top-0 z-10 -mx-4 bg-pane px-4 pt-2 pb-2 text-[11px] font-semibold tracking-[0.08em] uppercase text-text-secondary">
