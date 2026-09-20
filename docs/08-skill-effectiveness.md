@@ -11,6 +11,12 @@ The slice is **observational**. It persists and projects evidence an author can
 use to judge a skill. It does not score skills, critique them, rewrite them, or
 aggregate them across conversations.
 
+The subsequent [skill-evaluation pilot](09-skill-evaluation-pilot.md) adds a
+separate, explicit CLI workflow for proactive cases, static consistency
+findings, and artifact-backed human review. Its reports may explain proposed
+edits. That expansion does not turn this document's observations into
+compliance judgments or change the dashboard/API contract.
+
 ## Decision
 
 v1 already answers “which `SKILL.md` files were loaded?” Effectiveness needs
@@ -37,13 +43,18 @@ From activations alone, the product cannot tell whether:
 - the same skill was loaded more than once in the thread; or
 - the containing turn later ended in success or error.
 
-Failed `SKILL.md` reads currently exist only as ingest diagnostics. Diagnostics
-are not public API resources, so authors cannot inspect them. Transcript
-`turn_ended` records are parsed for session shape but are not stored.
+Before this observational slice, failed `SKILL.md` reads existed only as ingest
+diagnostics and transcript `turn_ended` records were not stored as turn events.
+The implementation now preserves the failure and turn events described below.
+
+Neither those events nor a successful read establishes adherence or task
+effectiveness. Missing reads cannot establish missed selection. The collector's
+manifest snapshots come from the filesystem following a successful read, not
+from the exact returned tool content.
 
 ## What this slice will not do
 
-The following remain out of scope:
+The following remain out of scope for this observational API slice:
 
 - numeric scores, grades, or “effectiveness” percentages;
 - LLM or heuristic judging of whether the agent followed the skill;
@@ -184,7 +195,8 @@ file read”) rather than verdicts (“skill worked”, “agent ignored the ski
 
 ## Later work
 
-A later document may introduce cross-conversation skill views or author-facing
-summaries. Those summaries must still be built from these observations, not
-from a hidden score. Numeric grading, LLM critique, and write-back remain
-out of scope until explicitly designed.
+The [evaluation pilot](09-skill-evaluation-pilot.md) supplies the next
+author-facing workflow. It adds project-specific expectations and reviewed
+artifacts as separate inputs; it does not derive compliance from the
+observational flags above. Cross-conversation dashboards, numeric grading,
+LLM critique, and automatic write-back remain outside this milestone.

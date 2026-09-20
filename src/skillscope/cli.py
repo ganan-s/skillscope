@@ -64,6 +64,16 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
 
+    evaluate = sub.add_parser(
+        "evaluate", help="Evaluate an explicit project skill case set"
+    )
+    evaluate.add_argument("--project", type=Path, required=True)
+    evaluate.add_argument("--cases", type=Path, required=True)
+    evaluate.add_argument("--evidence", type=Path, default=None)
+    evaluate.add_argument(
+        "--output", type=Path, required=True, help="New report directory"
+    )
+
     return parser
 
 
@@ -80,8 +90,35 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_ingest(args)
     if args.command == "serve":
         return _cmd_serve(args)
+    if args.command == "evaluate":
+        return _cmd_evaluate(args)
 
     return 2
+
+
+def _cmd_evaluate(args) -> int:
+    from datetime import UTC, datetime
+
+    from skillscope.bootstrap import build_evaluation
+    from skillscope.domain.evaluation import EvaluationError
+
+    try:
+        operation = build_evaluation(
+            project=args.project,
+            cases=args.cases,
+            evidence=args.evidence,
+            output=args.output,
+        )
+        report = operation(created_at=datetime.now(UTC).isoformat())
+    except EvaluationError as exc:
+        print(f"Cannot evaluate skills: {exc}", file=sys.stderr)
+        return 1
+    print(f"Evaluated {len(report.cases)} cases. Report: {args.output / 'report.md'}")
+    print(
+        "Report creation succeeded; findings are not a compliance pass "
+        "or quality score."
+    )
+    return 0
 
 
 def _cmd_ingest(args) -> int:

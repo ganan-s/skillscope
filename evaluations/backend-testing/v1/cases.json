@@ -1,0 +1,327 @@
+{
+  "schema_version": 1,
+  "id": "backend-testing-pilot",
+  "version": "1.0.0",
+  "provenance": {
+    "kind": "project_specification",
+    "note": "Proposed evaluation expectations derived from the current Skillscope project instructions, not historical failures or observed agent outcomes. Tasks are authored scenarios. Source references are exact excerpts; a run must preserve the actual instruction versions it evaluates. Required and allowed skills describe task applicability, not permission to read files. Additional reads, including shared AGENTS.md guidance or architecture skills, are not selection failures."
+  },
+  "skills": [
+    {
+      "id": "backend-unit-testing",
+      "path": ".cursor/skills/backend-unit-testing/SKILL.md"
+    },
+    {
+      "id": "backend-integration-testing",
+      "path": ".cursor/skills/backend-integration-testing/SKILL.md"
+    },
+    {
+      "id": "backend-e2e-testing",
+      "path": ".cursor/skills/backend-e2e-testing/SKILL.md"
+    }
+  ],
+  "cases": [
+    {
+      "id": "unit-native-record-memory",
+      "title": "Pure native-record normalization",
+      "task": "Add focused regression tests for native read-record normalization from dictionaries already in memory. Cover a successful read of exact SKILL.md, a failed read, and a read with unknown outcome. Do not change discovery or file loading.",
+      "required_skills": ["backend-unit-testing"],
+      "allowed_skills": ["backend-hexagonal-architecture"],
+      "forbidden_skills": [],
+      "selection_rationale": "Pure adapter normalization is unit work. Native Cursor-shaped input alone does not make a test integration work; the presence of real I/O determines the boundary. Other skill reads are observations rather than failures.",
+      "source_refs": [
+        {"path": ".cursor/skills/backend-unit-testing/SKILL.md", "quote": "Use `adapters/` only for pure adapter logic such as native-record normalization\nor row/DTO mapping."}
+      ],
+      "requirements": [
+        {
+          "id": "unit_location",
+          "description": "Place regression tests under tests/unit, organized with the pure adapter code they exercise.",
+          "source_refs": [{"path": ".cursor/skills/backend-unit-testing/SKILL.md", "quote": "Place tests under `tests/unit/`, mirroring the production package:"}]
+        },
+        {
+          "id": "in_memory_inputs",
+          "description": "Pass synthetic native dictionaries directly; do not read a JSONL fixture or use tmp_path, SQLite, HTTP clients, subprocesses, clock, or environment I/O in these tests.",
+          "source_refs": [{"path": ".cursor/skills/backend-unit-testing/SKILL.md", "quote": "Test Cursor normalization from in-memory native dictionaries. Reading JSONL\n  fixtures from disk is an integration test."}]
+        },
+        {
+          "id": "failed_unknown_read_negative",
+          "description": "Verify that failed and unknown read outcomes do not produce skill.activated; an exact filename alone is insufficient.",
+          "source_refs": [{"path": ".cursor/skills/backend-unit-testing/SKILL.md", "quote": "Confirm unknown or failed read evidence never becomes `skill.activated`."}]
+        },
+        {
+          "id": "commands_use_uv",
+          "description": "Invoke Python checks through uv, including uv run pytest tests/unit and the required Ruff checks after Python changes.",
+          "source_refs": [{"path": "AGENTS.md", "quote": "Use uv for Python environments, dependencies, and commands. Do not use\nstandalone `pip` or manually managed virtual environments."}, {"path": "AGENTS.md", "quote": "uv run pytest tests/unit"}]
+        }
+      ]
+    },
+    {
+      "id": "unit-application-port",
+      "title": "Application behavior through a fake port",
+      "task": "Add a regression test for how IngestConversations handles a snapshot writer returning unchanged. Supply one ready synthetic snapshot through a fake harness port and a fake ConversationSnapshotWriter whose persist method returns unchanged. Verify that the application increments unchanged in both its returned IngestSummary and recorded ingest metadata, with no inserted, updated, or failed count. This tests application handling of a port result; actual replacement and revision idempotency belong to the real writer's integration tests.",
+      "required_skills": ["backend-unit-testing"],
+      "allowed_skills": ["backend-hexagonal-architecture"],
+      "forbidden_skills": [],
+      "selection_rationale": "The tested behavior is application orchestration through ports: converting the writer's unchanged result into public summary and metadata counts. It does not establish SQLite replacement or idempotency behavior. The architecture skill may legitimately apply alongside the unit-testing skill.",
+      "source_refs": [{"path": ".cursor/skills/backend-unit-testing/SKILL.md", "quote": "Test application use cases against harness and repository ports, not Cursor\n  or SQLite implementations."}],
+      "requirements": [
+        {
+          "id": "fake_repository_port",
+          "description": "Use small handwritten fakes for the harness, ConversationSnapshotWriter, and IngestMetadataWriter ports. The snapshot writer returns unchanged when the application calls persist; the metadata writer captures the public ingest metadata. Do not construct SQLite or patch application internals.",
+          "source_refs": [{"path": ".cursor/skills/backend-unit-testing/SKILL.md", "quote": "Use small, handwritten fakes for application ports when state matters:"}, {"path": ".cursor/skills/backend-unit-testing/SKILL.md", "quote": "Fakes must implement the real port and expose only the controls and observations\nneeded by tests."}]
+        },
+        {
+          "id": "public_noop_outcome",
+          "description": "Assert unchanged is one and inserted, updated, and failed are zero in the returned IngestSummary and recorded IngestMetadata for the ready snapshot. These assertions verify application handling of the unchanged port result; do not claim they prove absence of database replacement or expect the application to skip persist.",
+          "source_refs": [{"path": ".cursor/skills/backend-unit-testing/SKILL.md", "quote": "Assert public results, state changes, emitted domain events, or errors. Avoid\nasserting private methods, incidental call order, or the exact sequence of\ninternal helper calls."}]
+        },
+        {
+          "id": "deterministic_unit_state",
+          "description": "Use fixed synthetic revisions, IDs, and times as needed; keep tests under tests/unit and free of real filesystem, database, or environment I/O.",
+          "source_refs": [{"path": ".cursor/skills/backend-unit-testing/SKILL.md", "quote": "Use fixed UTC datetimes and stable IDs."}, {"path": ".cursor/skills/backend-unit-testing/SKILL.md", "quote": "performs no filesystem, SQLite, network, subprocess, clock, or environment\n  I/O;"}]
+        },
+        {
+          "id": "commands_use_uv",
+          "description": "Run the focused unit suite and Python checks through uv.",
+          "source_refs": [{"path": "AGENTS.md", "quote": "Use uv for Python environments, dependencies, and commands."}, {"path": "AGENTS.md", "quote": "uv run pytest tests/unit"}]
+        }
+      ]
+    },
+    {
+      "id": "boundary-jsonl-fixture",
+      "title": "A disk fixture is not a unit input",
+      "task": "Review and correct a proposed test under tests/unit that uses tmp_path to write native JSONL, then invokes the real Cursor parser to read that file. Preserve this real file-to-parser boundary and classify the test in the appropriate suite; do not replace it with a mock merely to keep the unit path.",
+      "required_skills": ["backend-unit-testing", "backend-integration-testing"],
+      "allowed_skills": ["backend-hexagonal-architecture"],
+      "forbidden_skills": [],
+      "selection_rationale": "Both skills apply to correcting the boundary: unit conventions identify the misplaced I/O and integration conventions govern the real fixture test. Narrowly selecting only one skill is not the objective.",
+      "source_refs": [{"path": ".cursor/skills/backend-unit-testing/SKILL.md", "quote": "Do not use `tmp_path` in unit tests. Pass in-memory records or path strings to\npure functions; filesystem behavior belongs in integration tests."}],
+      "requirements": [
+        {
+          "id": "integration_reclassification",
+          "description": "Place the real file-reading test under tests/integration and explain that preserving filesystem I/O is the reason for its classification.",
+          "source_refs": [{"path": ".cursor/skills/backend-unit-testing/SKILL.md", "quote": "Reading JSONL\n  fixtures from disk is an integration test."}, {"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "Place tests under `tests/integration/`, organized by boundary:"}]
+        },
+        {
+          "id": "real_synthetic_fixture",
+          "description": "Exercise the real parser with synthetic native-shaped JSONL rather than pre-normalized DTOs or a mocked parser.",
+          "source_refs": [{"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "Keep raw native shapes in fixtures. Do not pre-normalize them into the expected\ncanonical DTO, or the test will bypass the adapter behavior it claims to prove."}]
+        },
+        {
+          "id": "isolated_paths",
+          "description": "Inject temporary transcript and spool paths with controlled platform/clock inputs; do not scan real Cursor data.",
+          "source_refs": [{"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "Use real fixture files and the real Cursor plugin. Inject the transcript root,\nhook-spool path, platform, and clock. Never scan `~/.cursor`."}]
+        },
+        {
+          "id": "commands_use_uv",
+          "description": "Invoke the relevant integration tests and Python checks through uv.",
+          "source_refs": [{"path": "AGENTS.md", "quote": "Use uv for Python environments, dependencies, and commands."}, {"path": "AGENTS.md", "quote": "uv run pytest tests/integration"}]
+        }
+      ]
+    },
+    {
+      "id": "integration-sqlite-rollback",
+      "title": "Atomic replacement with real SQLite",
+      "task": "Add coverage proving that an interrupted conversation aggregate replacement rolls back without leaving partial child rows. Exercise the real SQLite adapter and production migrations against an isolated temporary database.",
+      "required_skills": ["backend-integration-testing"],
+      "allowed_skills": ["backend-hexagonal-architecture", "backend-unit-testing"],
+      "forbidden_skills": [],
+      "selection_rationale": "Actual transaction atomicity crosses the application/storage boundary. A unit policy test may accompany it, but it cannot substitute for the real SQLite contract.",
+      "source_refs": [{"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "SQLite repository reads, writes, transactions, constraints, and row mapping;"}],
+      "requirements": [
+        {
+          "id": "real_sqlite_migrations",
+          "description": "Use the real connection factory, production migrations, and repository; do not mock SQLite or manufacture a substitute schema.",
+          "source_refs": [{"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "Use the real connection factory, migrations, repositories, and explicit SQL."}, {"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "Apply production migrations rather than creating tables directly in test code."}]
+        },
+        {
+          "id": "temporary_database",
+          "description": "Keep each test's database and writable state under explicit temporary paths, with no existing Skillscope database dependency.",
+          "source_refs": [{"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "Create databases under `tmp_path`."}, {"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "Default to a fresh database per test."}]
+        },
+        {
+          "id": "observable_atomicity",
+          "description": "Prove rollback leaves the previous complete aggregate and no partial replacement children through public queries or SQL assertions specifically needed to establish atomicity.",
+          "source_refs": [{"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "rollback without partial child rows;"}, {"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "Direct SQL assertions are\nappropriate only when verifying schema, constraints, or atomicity that the\npublic port cannot expose."}]
+        },
+        {
+          "id": "commands_use_uv",
+          "description": "Invoke integration tests and Python checks through uv.",
+          "source_refs": [{"path": "AGENTS.md", "quote": "Use uv for Python environments, dependencies, and commands."}, {"path": "AGENTS.md", "quote": "uv run pytest tests/integration"}]
+        }
+      ]
+    },
+    {
+      "id": "integration-fastapi-client",
+      "title": "Read-only API through an in-process client",
+      "task": "Add a FastAPI contract test for an unknown conversation ID and verify that serving from a temporary snapshot database does not mutate that store. Use an in-process client and the production application factory.",
+      "required_skills": ["backend-integration-testing"],
+      "allowed_skills": ["backend-hexagonal-architecture"],
+      "forbidden_skills": [],
+      "selection_rationale": "FastAPI route registration and error mapping are integration behavior even though requests and the app run in one process. A live socket is unnecessary for this task.",
+      "source_refs": [{"path": ".cursor/skills/backend-unit-testing/SKILL.md", "quote": "Route registration, validation,\n  middleware, OpenAPI, and status codes belong in integration tests."}],
+      "requirements": [
+        {
+          "id": "real_in_process_api",
+          "description": "Build the real FastAPI application with real query services and a temporary snapshot database; use its in-process client without mocked route handlers.",
+          "source_refs": [{"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "Build the real FastAPI application with real query services and a temporary\nsnapshot database. Use an in-process client. Do not mock route handlers or\nFastAPI internals."}]
+        },
+        {
+          "id": "public_error_contract",
+          "description": "Assert the public unknown-ID status and stable error body rather than private handler calls or database row shapes.",
+          "source_refs": [{"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "stable error bodies and status codes;"}, {"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "HTTP status, headers, and JSON bodies;"}]
+        },
+        {
+          "id": "read_only_store",
+          "description": "Seed the fixture through the real write-side repository or public storage-port builder, then verify serving cannot create, migrate, or mutate it.",
+          "source_refs": [{"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "Seed data through the real write-side repository or a test data builder that\nuses public storage ports."}, {"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "read-only serving that cannot create, migrate, or mutate the store."}]
+        },
+        {
+          "id": "commands_use_uv",
+          "description": "Invoke integration tests and Python checks through uv.",
+          "source_refs": [{"path": "AGENTS.md", "quote": "Use uv for Python environments, dependencies, and commands."}, {"path": "AGENTS.md", "quote": "uv run pytest tests/integration"}]
+        }
+      ]
+    },
+    {
+      "id": "integration-cli-runner",
+      "title": "CLI option validation without a process boundary",
+      "task": "Add a test for invalid CLI options, checking the exit code and user-facing error through the real command registration and an in-process CLI runner. No installed-package or separate-process behavior needs to be demonstrated.",
+      "required_skills": ["backend-integration-testing"],
+      "allowed_skills": ["backend-hexagonal-architecture", "backend-e2e-testing"],
+      "forbidden_skills": [],
+      "selection_rationale": "Real CLI parsing and wiring in one process are integration tests. Reading the E2E boundary guidance is legitimate; classifying this test as E2E solely because it tests a CLI is not justified.",
+      "source_refs": [{"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "CLI option parsing and exit behavior;"}],
+      "requirements": [
+        {
+          "id": "real_in_process_cli",
+          "description": "Exercise the real command registration/composition via an in-process runner under tests/integration, without replacing option parsing with mocks.",
+          "source_refs": [{"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "Invoke the real command registration and composition through an in-process CLI\nrunner with explicit temporary paths."}]
+        },
+        {
+          "id": "cli_public_output",
+          "description": "Assert the public CLI exit code and user-facing error; do not assert private helper-call order.",
+          "source_refs": [{"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "CLI exit codes and user-facing output;"}, {"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "Do not assert internal helper calls or private object graphs."}]
+        },
+        {
+          "id": "isolated_cli_configuration",
+          "description": "Provide explicit temporary paths and any configuration the CLI reads; do not rely on the developer's home, database, or shell environment.",
+          "source_refs": [{"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "All writable paths come from `tmp_path` or an explicit test configuration."}, {"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "environment variables from the developer's shell;"}]
+        },
+        {
+          "id": "commands_use_uv",
+          "description": "Invoke integration tests and Python checks through uv.",
+          "source_refs": [{"path": "AGENTS.md", "quote": "Use uv for Python environments, dependencies, and commands."}, {"path": "AGENTS.md", "quote": "uv run pytest tests/integration"}]
+        }
+      ]
+    },
+    {
+      "id": "e2e-installed-entrypoint",
+      "title": "Installed-wheel console entry point",
+      "task": "Add or extend an installed-artifact smoke test that builds the Skillscope wheel and runs the installed skillscope --version entry point in a Testcontainers-managed test environment. Prove the packaged artifact works without importing product behavior from the checkout.",
+      "required_skills": ["backend-e2e-testing"],
+      "allowed_skills": ["backend-integration-testing", "backend-hexagonal-architecture"],
+      "forbidden_skills": [],
+      "selection_rationale": "The installed wheel and real process are required boundaries. Integration skill co-use is explicitly permitted when deciding that boundary.",
+      "source_refs": [{"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "an installed wheel or console entry point;"}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Also apply\n`backend-integration-testing` when deciding whether a test needs a real process\nboundary."}],
+      "requirements": [
+        {
+          "id": "installed_artifact",
+          "description": "Build the wheel with uv, install that wheel non-editably in the test environment, and invoke the installed console entry point; share the build per pytest session.",
+          "source_refs": [{"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Build the wheel with `uv`."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Install the wheel in the test environment; never use an editable install."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Share one built wheel per pytest session."}]
+        },
+        {
+          "id": "testcontainers_isolation",
+          "description": "Use Testcontainers for lifecycle and cleanup with only the wheel, synthetic fixtures, and temporary state mounted; do not mount the source checkout, real home, Cursor data, database, or Docker socket.",
+          "source_refs": [{"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Use Python Testcontainers to own container start, stop, networking, port\n  mapping, logs, and cleanup."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Mount only the built wheel, synthetic fixtures, and temporary test state."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Never mount the real home directory, Cursor data, Skillscope database, or\n  Docker socket."}]
+        },
+        {
+          "id": "process_evidence",
+          "description": "Assert public process exit status and version output. Selected E2E runs must report missing Docker as a clear failure rather than claiming a pass or substituting an in-process check.",
+          "source_refs": [{"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Assert public process output, exit status, files, HTTP responses, or browser\n  behavior."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Treat missing Docker as a clear failure when the E2E suite is selected."}]
+        },
+        {
+          "id": "e2e_harness_conventions",
+          "description": "Read docs/06-e2e-test-framework.md before changing the harness or suite, place the test under tests/e2e, use e2e/docker markers, and run Python commands through uv.",
+          "source_refs": [{"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Read `docs/06-e2e-test-framework.md` before changing the E2E harness or suite."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Mark Python E2E\ntests with both `e2e` and `docker` when they require Testcontainers."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "uv run pytest tests/e2e"}]
+        }
+      ]
+    },
+    {
+      "id": "e2e-live-snapshot-api",
+      "title": "Live service remains independent of source files",
+      "task": "Add a narrow packaged-service E2E scenario: ingest synthetic Cursor fixtures through the installed CLI, remove those native source fixtures, start the installed service, and retrieve the saved conversation over a real HTTP socket. Demonstrate that serving depends on the snapshot rather than live native files.",
+      "required_skills": ["backend-e2e-testing"],
+      "allowed_skills": ["backend-integration-testing", "backend-hexagonal-architecture"],
+      "forbidden_skills": [],
+      "selection_rationale": "This scenario needs installed entry points, a separate service process, and a real socket. Architecture and integration guidance may apply to setup and boundary decisions without invalidating E2E selection.",
+      "source_refs": [{"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "a separately running Skillscope process;"}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "a real HTTP socket;"}],
+      "requirements": [
+        {
+          "id": "installed_ingest_setup",
+          "description": "Use fixed synthetic fixtures and the installed skillscope ingest command to create the snapshot; do not seed the E2E database with ad hoc SQL.",
+          "source_refs": [{"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Use synthetic fixtures with fixed ids and UTC timestamps."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Invoke the installed `skillscope ingest` for true E2E store setup."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Do not seed the E2E database with ad hoc SQL."}]
+        },
+        {
+          "id": "source_independence",
+          "description": "Remove the native fixture source before asserting that the live API still returns the previously ingested snapshot.",
+          "source_refs": [{"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Remove native source fixtures before snapshot-independence assertions."}]
+        },
+        {
+          "id": "real_socket_readiness",
+          "description": "Use an installed service managed by Testcontainers and a real HTTP request through a random mapped port, with bounded readiness checks instead of arbitrary sleeps.",
+          "source_refs": [{"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Use random mapped host ports."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Use bounded process or HTTP readiness checks; never use arbitrary sleeps."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Test a narrow core flow through real HTTP."}]
+        },
+        {
+          "id": "isolated_e2e_state",
+          "description": "Keep writable state isolated, never mount personal data or the Docker socket, and include sanitized container diagnostics when the scenario fails.",
+          "source_refs": [{"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Give each test isolated writable state."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Never mount the real home directory, Cursor data, Skillscope database, or\n  Docker socket."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Include sanitized container logs in assertion failures."}]
+        },
+        {
+          "id": "e2e_harness_conventions",
+          "description": "Read the E2E framework document before changing the suite, use the applicable e2e/docker markers, and invoke tests and Python checks through uv.",
+          "source_refs": [{"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Read `docs/06-e2e-test-framework.md` before changing the E2E harness or suite."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Mark Python E2E\ntests with both `e2e` and `docker` when they require Testcontainers."}, {"path": "AGENTS.md", "quote": "Use uv for Python environments, dependencies, and commands."}]
+        }
+      ]
+    },
+    {
+      "id": "boundary-testclient-not-e2e",
+      "title": "Broad in-process coverage remains integration",
+      "task": "Review a proposed E2E test that builds FastAPI in process, opens a temporary SQLite database, and sends requests through TestClient. It never installs a wheel, launches a separate process, opens a real socket, or uses a browser. Recommend the correct test layer and explain the boundary; this is a review-only task.",
+      "required_skills": ["backend-integration-testing", "backend-e2e-testing"],
+      "allowed_skills": ["backend-hexagonal-architecture"],
+      "forbidden_skills": [],
+      "selection_rationale": "Both integration and E2E skills are applicable to a classification decision. Loading E2E guidance here is correct even though the proposed test belongs in integration.",
+      "source_refs": [{"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Also apply\n`backend-integration-testing` when deciding whether a test needs a real process\nboundary."}],
+      "requirements": [
+        {
+          "id": "integration_classification",
+          "description": "Recommend tests/integration for the described TestClient/SQLite scenario and explicitly identify the absence of an installed-artifact, process, socket, or browser requirement.",
+          "source_refs": [{"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "In-process CLI, FastAPI TestClient, real SQLite, and filesystem fixtures alone\nare integration tests. Do not move broad integration coverage into E2E."}]
+        },
+        {
+          "id": "preserve_real_boundary",
+          "description": "Keep the real FastAPI and SQLite boundary in the proposed integration test; do not suggest mocking it into a unit test or adding a gratuitous process merely to retain the E2E label.",
+          "source_refs": [{"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "Do not mock SQLite, FastAPI, filesystem calls, or the Cursor adapter in a test\nclaiming to integrate them."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Do not move broad integration coverage into E2E."}]
+        }
+      ]
+    },
+    {
+      "id": "negative-markdown-copy-only",
+      "title": "A prose-only typo does not require testing guidance",
+      "task": "Correct a spelling typo in a README heading. This task changes prose only, does not request test advice, and does not change any Python, configuration, commands, or test behavior. Explain briefly whether any of the three pilot testing skills is needed for this task.",
+      "required_skills": [],
+      "allowed_skills": [],
+      "forbidden_skills": ["backend-unit-testing", "backend-integration-testing", "backend-e2e-testing"],
+      "selection_rationale": "No pilot testing skill is substantively applicable to this narrow prose task. Forbidden here applies only to a reviewed judgment claiming a testing skill is needed; it never prohibits reads or treats reads caused by shared AGENTS.md instructions as failure. Nonpilot skills remain outside the assessed selection universe.",
+      "source_refs": [{"path": ".cursor/skills/backend-unit-testing/SKILL.md", "quote": "Apply these conventions to Skillscope backend unit tests."}, {"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "Apply these conventions to Skillscope backend integration tests."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Apply these conventions to Skillscope E2E work."}],
+      "requirements": [
+        {
+          "id": "scope_explanation",
+          "description": "Explain that none of the three testing skills is required for the described prose-only edit. Do not infer a testing applicability failure merely from reading a skill or shared project guidance.",
+          "source_refs": [{"path": ".cursor/skills/backend-unit-testing/SKILL.md", "quote": "Apply these conventions to Skillscope backend unit tests."}, {"path": ".cursor/skills/backend-integration-testing/SKILL.md", "quote": "Apply these conventions to Skillscope backend integration tests."}, {"path": ".cursor/skills/backend-e2e-testing/SKILL.md", "quote": "Apply these conventions to Skillscope E2E work."}]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "run_id": "illustrative-evaluator-demonstration-v1",
+  "provenance": "illustrative",
+  "case_set_sha256": "7e7d4df99d4a0cb47fe89a2f030d91f3fa42bda58f9cb6fa38a2de2b4a3eb53a",
+  "source_snapshot_sha256": "91112522d4c944030ead032005562fc1fc837f9d524eea458609b9afac13809b",
+  "context": {
+    "runtime": "not-run",
+    "model": "not-run",
+    "environment": "handwritten fixture only",
+    "invocation": "no agent or test execution",
+    "workspace_revision": "7edf1a71965d26a58429dfdcf7e92009d06a2400"
+  },
+  "artifacts": [
+    {
+      "id": "illustration",
+      "path": "illustrative-artifacts.txt",
+      "description": "Handwritten positive, contrary, and unsupported examples; never runtime evidence.",
+      "provenance": "illustrative"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "unit-native-record-memory",
+      "reads": [],
+      "selection": {
+        "basis": "illustrative",
+        "assessed_skills": [
+          "backend-unit-testing",
+          "backend-hexagonal-architecture"
+        ],
+        "complete": true,
+        "rationale": "Illustration of relevant unit guidance with legitimate architecture co-use.",
+        "reviewer": null,
+        "evidence": [
+          {
+            "artifact_id": "illustration",
+            "quote": "Demonstrated guidance: backend-unit-testing and backend-hexagonal-architecture."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "requirement_id": "in_memory_inputs",
+          "basis": "illustrative",
+          "outcome": "met",
+          "rationale": "The invented artifact describes in-memory inputs. This is an evaluator illustration only.",
+          "reviewer": null,
+          "evidence": [
+            {
+              "artifact_id": "illustration",
+              "quote": "Inputs: synthetic Python dictionaries passed directly to a normalizer."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "boundary-jsonl-fixture",
+      "reads": [
+        {
+          "skill_id": "backend-unit-testing",
+          "evidence": {
+            "artifact_id": "illustration",
+            "quote": "A supplied read log nevertheless says backend-unit-testing and backend-integration-testing were read successfully."
+          }
+        },
+        {
+          "skill_id": "backend-integration-testing",
+          "evidence": {
+            "artifact_id": "illustration",
+            "quote": "A supplied read log nevertheless says backend-unit-testing and backend-integration-testing were read successfully."
+          }
+        }
+      ],
+      "selection": {
+        "basis": "illustrative",
+        "assessed_skills": [
+          "backend-unit-testing"
+        ],
+        "complete": true,
+        "rationale": "The invented explanation applies only unit guidance despite the preserved real-file boundary; read presence cannot override the contrary artifact.",
+        "reviewer": null,
+        "evidence": [
+          {
+            "artifact_id": "illustration",
+            "quote": "The illustrated agent explains only unit guidance; integration guidance is missing from that explanation."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "requirement_id": "integration_reclassification",
+          "basis": "illustrative",
+          "outcome": "not_met",
+          "rationale": "The invented test remains under tests/unit despite real filesystem I/O. A successful skill read cannot satisfy or override this check.",
+          "reviewer": null,
+          "evidence": [
+            {
+              "artifact_id": "illustration",
+              "quote": "The example retains tests/unit despite the real filesystem boundary."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "e2e-installed-entrypoint",
+      "reads": [],
+      "selection": null,
+      "checks": [
+        {
+          "requirement_id": "installed_artifact",
+          "basis": "agent_self_report",
+          "outcome": "met",
+          "rationale": "This invented assistant sentence has no wheel, install command, process status, or output evidence. It cannot establish that the installed artifact was exercised.",
+          "reviewer": null,
+          "evidence": [
+            {
+              "artifact_id": "illustration",
+              "quote": "Assistant: I installed the wheel and verified the packaged console entry point."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

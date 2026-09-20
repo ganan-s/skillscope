@@ -3,9 +3,9 @@
 **Repo:** [https://github.com/ganan-s/skillscope](https://github.com/ganan-s/skillscope)
 (public)
 
-Local dashboard for reviewing which `SKILL.md` files an agent actually loaded in
-closed Cursor conversations — including the file contents at ingest time, not
-whatever is on disk now.
+Local tools for inspecting observed `SKILL.md` loads and evaluating whether
+project skills apply to planned tasks. The dashboard preserves closed Cursor
+conversation snapshots; the evaluation CLI reviews explicit cases and evidence.
 
 ## Write-up
 
@@ -23,11 +23,44 @@ conversation list and thread view. The store is a snapshot. Serve never
 re-opens workspaces or re-reads skill files. There is no cloud, no API keys,
 and no HTTP ingest endpoint.
 
-Impact is inspectability without changing how the agent works. Authors can see
-repeated loads, missing loads, and the exact manifest that was snapshotted.
-Judgment stays with the human. v1 is Cursor-only, closed-session-only, and
-local-only; later harnesses should emit the same canonical events into the
-same dashboard.
+Authors can inspect repeated loads, absent recorded loads, and captured manifest
+contents. Absence of a recorded load does not prove a missed selection. The
+collector snapshots the filesystem after a successful read; this is not a copy
+of the exact content returned to the agent. Judgment stays with the human. The
+conversation dashboard is Cursor-only, closed-session-only, and local-only.
+
+The [skill-evaluation pilot](docs/09-skill-evaluation-pilot.md) adds proactive
+maintenance for the project's unit, integration, and end-to-end testing skills.
+It uses versioned task cases, preserved source versions, static findings, and
+explicitly reviewed evidence. No historical failure, model service, dashboard
+build, or generic skill score is required.
+
+## Evaluate the backend testing skills
+
+```bash
+uv run skillscope evaluate \
+  --project . \
+  --cases evaluations/backend-testing/v1/cases.json \
+  --output /tmp/skillscope-pilot-baseline
+```
+
+Use a fresh output directory. Open `report.md` for per-case and per-skill
+findings; `report.json` preserves the case specification and source snapshots.
+Without supplied evidence, behavior and selection judgments remain unverified.
+The generated `evidence-template.json` provides version-bound input slots;
+the [pilot guide](docs/09-skill-evaluation-pilot.md) explains how to review evidence.
+After collecting and reviewing artifacts, pass the completed file with
+`--evidence /path/to/review.json` and choose another fresh output directory.
+
+The pilot reports command-example drift against `AGENTS.md` as a static finding
+and explains a small proposed revision. It does not edit the project skills or
+claim that the revision improves agent behavior. See the
+[capture and comparison workflow](docs/09-skill-evaluation-pilot.md) for the next
+step.
+
+Inspect the [generated example report](evaluations/backend-testing/v1/sample-report.md)
+and [demonstration results](evaluations/backend-testing/v1/results.md), including
+commands to replay explicitly illustrative evidence without invoking a model.
 
 ## Quick start
 
@@ -122,6 +155,8 @@ flowchart LR
 | `experiments/cursor-golden-session/.local/` | Developer-generated capture and golden pack. | No (gitignored) |
 | `~/.cursor/projects/**/agent-transcripts` | Real Cursor transcripts on the operator’s machine. | No |
 | Hook spool / SQLite | Local ingest output; may contain prompts and skill bodies. | No |
+| `evaluations/backend-testing/v1/` | Project-specific proposed evaluation expectations, derived from the current testing skills. Illustrative evidence, when included, is labelled separately from observed runs. | Yes |
+| Evaluation output directory | Local reports, exact evaluated sources and explicitly supplied artifacts. No automatic scan of personal conversations. | No |
 
 ## Deployed URL
 
@@ -144,6 +179,9 @@ and open [http://127.0.0.1:8000](http://127.0.0.1:8000) for a working app.
   activation.
 - No first-class Windows QA in v1.
 - No public deployment.
+- The evaluation pilot accepts reviewed evidence; it does not run agents or
+  infer compliance from read logs. Comparative behavior remains unverified
+  until reviewed runs support it.
 
 **Next steps**
 
@@ -187,4 +225,5 @@ Run `uv run skillscope serve` in another terminal for the API backend.
 Design docs: [vision](docs/01-vision.md), [architecture](docs/02-backend-architecture.md),
 [ingestion contract](docs/03-ingestion-contract.md),
 [API resources](docs/05-api-resource-design.md),
+[evaluation pilot](docs/09-skill-evaluation-pilot.md),
 [OpenAPI](docs/openapi/v1.yaml).

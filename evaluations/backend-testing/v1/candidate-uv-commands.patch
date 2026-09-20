@@ -1,0 +1,16 @@
+diff --git a/.cursor/skills/backend-unit-testing/SKILL.md b/.cursor/skills/backend-unit-testing/SKILL.md
+--- a/.cursor/skills/backend-unit-testing/SKILL.md
++++ b/.cursor/skills/backend-unit-testing/SKILL.md
+@@ -232,3 +232,3 @@
+ ```bash
+-pytest tests/unit
++uv run pytest tests/unit
+ ```
+diff --git a/.cursor/skills/backend-integration-testing/SKILL.md b/.cursor/skills/backend-integration-testing/SKILL.md
+--- a/.cursor/skills/backend-integration-testing/SKILL.md
++++ b/.cursor/skills/backend-integration-testing/SKILL.md
+@@ -285,3 +285,3 @@
+ ```bash
+-pytest tests/integration
++uv run pytest tests/integration
+ ```

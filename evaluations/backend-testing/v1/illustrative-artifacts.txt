@@ -1,0 +1,18 @@
+ILLUSTRATIVE FIXTURE. Handwritten examples; no agent or test run produced this file.
+
+Example A — a pure parsing attempt:
+Path: tests/unit/adapters/test_demo.py
+Inputs: synthetic Python dictionaries passed directly to a normalizer.
+No filesystem, database, client, subprocess, clock, or environment access in the illustrated test.
+Demonstrated guidance: backend-unit-testing and backend-hexagonal-architecture.
+
+Example B — a misplaced real-file test:
+Path: tests/unit/adapters/test_jsonl_demo.py
+Illustrated test creates tmp_path / "sample.jsonl", writes synthetic JSONL, and calls the real file parser.
+The example retains tests/unit despite the real filesystem boundary.
+The illustrated agent explains only unit guidance; integration guidance is missing from that explanation.
+A supplied read log nevertheless says backend-unit-testing and backend-integration-testing were read successfully.
+
+Example C — an unsupported agent assertion:
+Assistant: I installed the wheel and verified the packaged console entry point.
+No install command, wheel, process exit status, or output artifact accompanies that sentence.

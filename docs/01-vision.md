@@ -1,6 +1,17 @@
-# 1. Vision: skill load visibility
+# 1. Vision: skill visibility and evaluation
 
-**v1 is a localhost web dashboard of closed conversations and the `SKILL.md` files they actually loaded.** It does not score skills, rewrite them, or re-read the filesystem at display time. Per-conversation observational signals for skill effectiveness are specified in [skill effectiveness](08-skill-effectiveness.md).
+**Skillscope helps project-specific skills remain clearly scoped, appropriately
+selected, and useful as the project evolves.** The original v1 is a localhost
+dashboard of closed conversations and their observed `SKILL.md` reads.
+Per-conversation observational signals are specified in
+[skill effectiveness](08-skill-effectiveness.md).
+
+The approved [evaluation pilot](09-skill-evaluation-pilot.md) expands that scope
+with versioned, project-specific cases and explicit evidence review for the
+three backend testing skills. It can start from hypothetical maintenance
+scenarios without a known failed conversation. This expansion does not change
+the read-only dashboard or snapshot history, add a generic quality score, or
+authorize automatic skill rewrites.
 
 ## Problem
 
@@ -10,13 +21,21 @@ Agent harnesses load `SKILL.md` files with almost no visibility for the author. 
 - Which skill files were read, in what order, from which source?
 - What did those files contain *then*, not what they contain now?
 
-v1 exists to make that history inspectable. Judgment stays with the author.
+The dashboard makes that history inspectable. A growing skill library also
+needs a way to check intended applicability and resulting work before failures
+are reported. Evaluation cases describe those expectations; preserved evidence
+and human review support judgments. More files or narrower wording alone are
+not improvements, and shared project requirements may stay shared.
 
-## Product (narrow)
+## Conversation dashboard
 
 The main entrypoint is a **localhost conversation list**. Drill-down is **one thread → the skill files loaded in that conversation**.
 
-Display is fed only by data written at ingest time. If the project was deleted, the skill was edited, or the machine layout changed, the dashboard still shows what was loaded then.
+Display is fed only by data written at ingest time. If the project was deleted,
+the skill was edited, or the machine layout changed, the dashboard still shows
+the recorded load and any captured snapshot. The collector reads filesystem
+bytes after the successful native read; a snapshot is not guaranteed to be the
+exact bytes returned by that native tool.
 
 Default project name: **skillscope**. Local only: a Python backend, SQLite, a
 read-only REST API, and a separately built frontend.
@@ -25,6 +44,7 @@ read-only REST API, and a separately built frontend.
 |---|---|
 | `skillscope ingest` | Discovers closed sessions, parses them, writes the snapshot store |
 | `skillscope serve` | Reads **only** that store; never opens workspaces or re-scans skill dirs |
+| `skillscope evaluate` | Reads explicit project/case/evidence inputs and writes a separate local evaluation report |
 
 No cloud. Conversation transcripts and skill snapshots stay on the machine.
 
@@ -51,15 +71,38 @@ A row in the list is a finished conversation: title, when, workspace path string
 
 The thread page shows stored user queries and ordered skill loads (name, path, source, time, repeats). Paths are informational; live file links are not required.
 
-A closed thread with **zero** unambiguous skill loads still appears, labeled **No skills loaded**. That absence is a real observation, not a reason to hide the thread.
+A closed thread with **zero** unambiguous skill loads still appears, labelled
+**No skills loaded**. This means the stored snapshot has no confirmed loads;
+it does not establish that a relevant skill was missed or never available.
 
-## What v1 will not do
+## Proactive evaluation pilot
 
-Out of scope until a later doc:
+The first evaluation milestone covers `backend-unit-testing`,
+`backend-integration-testing`, and `backend-e2e-testing`. Readable positive,
+boundary, and negative cases specify applicable skills and observable
+requirements. Architecture and testing skills may legitimately apply together.
+The project's current AGENTS.md requires all four backend skills, so observing
+their forced reads is not an experiment in automatic routing.
+
+The CLI preserves evaluated skill versions, shared instructions, case inputs,
+project context, and supplied artifacts. It distinguishes static findings,
+reviewed judgments, observed reads, illustrative evidence, and missing evidence.
+Reports explain a proposed edit's purpose; behavior improvement remains
+unverified without suitable comparative evidence. The detailed workflow and
+evidence contract are in [the pilot design](09-skill-evaluation-pilot.md).
+
+AGENTS.md and other Markdown instruction evaluation may follow later. In this
+pilot AGENTS.md supplies shared project context and the Python tooling policy;
+it is not itself graded as a skill.
+
+## What remains out of scope
+
+Outside the dashboard and this limited evaluation pilot:
 
 - Open or in-flight sessions
 - A resident background ingest worker or live transcript watcher
-- Aggregates, critique, scores, or write-back
+- Generic quality scores, automatic rewrites, or write-back to project skills
+- Agent execution services, paid evaluation runs, or broad evaluation platforms
 - Additional harness plugins beyond Cursor
 - Re-reading skill files or repos when serving the UI
 - Cursor-native visualization (marketplace plugin, MCP-in-chat query as the dashboard, IDE webview)
@@ -179,7 +222,9 @@ v1 is local-only. Ingest copies user query text and skill file snapshots into SQ
 
 ## Later docs
 
-This file is the product vision. Follow-on docs should cover, without expanding v1 scope:
+The original dashboard scope is specified by the following documents. The
+explicit scope expansion for proactive evaluation is
+[09-skill-evaluation-pilot.md](09-skill-evaluation-pilot.md).
 
 - Harness plugin contract (Cursor: OS roots, closed-session rule, parser)
 - Snapshot schema

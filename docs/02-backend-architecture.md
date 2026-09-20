@@ -3,17 +3,20 @@
 ## Status
 
 This document defines the v1 backend architecture implied by the
-[vision](01-vision.md). The frontend is a separate application with a framework
-still to be selected. Its boundary with the backend is the REST API described
+[vision](01-vision.md), with the separate offline evaluation path introduced by
+the [skill-evaluation pilot](09-skill-evaluation-pilot.md). The React frontend is
+a separate application. Its boundary with the backend is the REST API described
 here.
 
 ## Decision
 
 Skillscope is a modular Python monolith distributed as one installable package
-with two commands:
+with three commands:
 
 - `skillscope ingest` is the synchronous write path.
 - `skillscope serve` is the read-only API and production frontend host.
+- `skillscope evaluate` reads explicitly selected evaluation inputs and writes
+  standalone local report artifacts.
 
 The backend uses FastAPI and Pydantic at its HTTP boundary, Python's `sqlite3`
 module with explicit SQL repositories, and ordered SQL migration files. It does
@@ -86,6 +89,28 @@ the frontend may use its own development server and proxy `/api/v1` to the
 backend. Development CORS, if needed, is an explicit localhost allowlist rather
 than a wildcard.
 
+### `skillscope evaluate`
+
+Evaluation is an explicit, finite CLI operation independent of conversation
+ingest and SQLite. It reads a versioned case set, the selected project's skill
+and instruction files, and optional supplied review evidence. It writes a fresh
+report directory containing Markdown, JSON, and an evidence template. It does
+not discover personal conversations, invoke a model, mutate skills, or add API
+endpoints.
+
+The application evaluates plain records and source text. Filesystem access,
+JSON input validation, git context collection, evidence-artifact loading, and
+report persistence belong in adapters. Concrete adapters are constructed in
+`skillscope.bootstrap`. CLI code parses options and renders the outcome; it
+must not contain the evaluation rules.
+
+Preserved case and source hashes bind a review to what was evaluated. Static
+findings describe source text, observed loads describe reads, and reviewed
+claims describe a reviewer's judgment. These must not become new confirmed
+compliance events in the conversation store. Evaluation reports have their own
+versioned contract and do not alter canonical ingestion or snapshot replacement
+semantics.
+
 ## Module boundaries
 
 The intended package shape is:
@@ -127,8 +152,11 @@ These are logical boundaries, not separate deployable services:
   database, or HTTP logic.
 - **Domain** defines harness-neutral records and invariants. It imports no
   plugin, storage, FastAPI, or frontend code.
-- **Application** orchestrates ingest transactions and read queries. It depends
-  on interfaces, not Cursor transcript shapes.
+- **Application** orchestrates ingest transactions, read queries, and offline
+  evaluation. It depends on interfaces and plain records, not Cursor transcript
+  shapes or filesystem operations.
+- **Evaluation adapters** load explicit files and project context and persist
+  reports. Their native JSON/file shapes stop at the application boundary.
 - **Harness plugins** own OS path discovery, closed-session detection, raw
   transcript parsing, and source-bucket inference.
 - **Storage** alone knows SQLite schema and SQL. It maps rows to domain/query
@@ -293,6 +321,11 @@ Architecture tests should prove the boundaries, not just endpoint status codes:
   starting transcript discovery.
 - Exercise plugin/parser tests against transcript fixtures without starting the
   web server.
+- Evaluate in-memory case/source/evidence records without filesystem or process
+  I/O in unit tests; exercise JSON, artifact preservation, and CLI wiring with
+  isolated files in integration tests.
+- Confirm missing evidence and model self-reports never become compliance
+  verdicts, and report generation never changes evaluated skill files.
 
 ## Deferred
 
@@ -305,4 +338,4 @@ The following do not belong in the v1 backend:
 - authentication or remote hosting;
 - an ORM;
 - additional harness implementations; and
-- frontend framework selection.
+- agent execution services or automatic skill rewrites.

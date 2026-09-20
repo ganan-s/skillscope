@@ -26,6 +26,7 @@ env/
 build/
 dist/
 .e2e-artifacts/
+.evaluation-runs/
 *.egg-info/
 .eggs/
 

@@ -56,3 +56,16 @@ def build_api_app(db_path: Path, *, static_dir: Path | None = None) -> FastAPI:
 def validate_read_store(db_path: Path) -> None:
     """Validate serve compatibility without creating or migrating the store."""
     SQLiteReadRepository(db_path).get_store_metadata()
+
+
+def build_evaluation(
+    *, project: Path, cases: Path, evidence: Path | None, output: Path
+):
+    """Wire the standalone pilot without giving serve access to live files."""
+    from skillscope.application.evaluation import EvaluateSkills
+    from skillscope.evaluation.files import FileEvaluationSink, FileEvaluationSource
+
+    return EvaluateSkills(
+        source=FileEvaluationSource(project, cases, evidence),
+        sink=FileEvaluationSink(output),
+    )
