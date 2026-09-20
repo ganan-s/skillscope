@@ -188,6 +188,15 @@ class TestSnapshot(unittest.TestCase):
         # Two successful reads of the same SKILL.md
         self.assertEqual(len(activations), 2)
         self.assertEqual(tasks[0].payload["raw_text"], "Add a login form")
+        failures = [
+            e for e in snap.events if e.event_type == EventType.SKILL_ACTIVATION_FAILED
+        ]
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(failures[0].payload["reason"], "failed")
+        self.assertNotIn("error_message", failures[0].payload)
+        turns = [e for e in snap.events if e.event_type == EventType.TURN_COMPLETED]
+        self.assertEqual(len(turns), 2)
+        self.assertEqual({turn.payload["status"] for turn in turns}, {"success"})
 
     def test_zero_skills_snapshot(self):
         plugin = CursorPlugin()

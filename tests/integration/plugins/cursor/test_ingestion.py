@@ -649,6 +649,64 @@ def test_parser_with_turn_ended_emits_turn_completed(tmp_path: Path) -> None:
     assert turns[0].payload["status"] == "error"
 
 
+def test_parser_with_nested_turn_ended_emits_turn_completed(tmp_path: Path) -> None:
+    transcript_dir = tmp_path / "conversation-1"
+    transcript_dir.mkdir()
+    (transcript_dir / "conversation-1.jsonl").write_text(
+        json.dumps(
+            {
+                "role": "user",
+                "message": {"content": [{"type": "text", "text": "Hello"}]},
+            }
+        )
+        + "\n"
+        + json.dumps({"message": {"type": "turn_ended", "status": "success"}})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    snapshot, _ = build_conversation_snapshot(
+        "conversation-1",
+        transcript_dir,
+        None,
+    )
+
+    turns = [
+        event
+        for event in snapshot.events
+        if event.event_type == EventType.TURN_COMPLETED
+    ]
+    assert [event.payload["status"] for event in turns] == ["success"]
+    assert turns[0].turn_index == 0
+
+
+def test_parser_with_failed_skill_read_missing_tool_name_emits_failure(
+    tmp_path: Path,
+) -> None:
+    record = hook(
+        "read_failed",
+        tool_id="failed-unnamed",
+        path="/skills/testing/SKILL.md",
+        snapshot=None,
+    )
+    del record["payload"]["tool_name"]
+    spool = write_spool(tmp_path, [record])
+
+    snapshot, diagnostics = build_conversation_snapshot(
+        "conversation-1",
+        None,
+        spool,
+    )
+
+    failures = [
+        event
+        for event in snapshot.events
+        if event.event_type == EventType.SKILL_ACTIVATION_FAILED
+    ]
+    assert [event.event_id for event in failures] == ["failed-unnamed"]
+    assert any(item.code == DiagnosticCode.READ_FAILED for item in diagnostics)
+
+
 def test_plugin_with_active_spool_only_source_defers_ingest(tmp_path: Path) -> None:
     spool = write_spool(
         tmp_path,

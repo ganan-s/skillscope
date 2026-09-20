@@ -174,6 +174,22 @@ class CanonicalEvent:
     time_provenance: TimeProvenance = TimeProvenance.MISSING
     payload: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if self.event_type == EventType.SKILL_ACTIVATION_FAILED:
+            path = self.payload.get("path")
+            reason = self.payload.get("reason")
+            if (
+                self.evidence.quality != EvidenceQuality.CONFIRMED
+                or not is_exact_skill_manifest(path)
+            ):
+                raise ValueError("activation failure requires confirmed exact SKILL.md")
+            if reason not in ActivationFailureReason:
+                raise ValueError("activation failure requires a canonical reason")
+        elif self.event_type == EventType.TURN_COMPLETED:
+            status = self.payload.get("status")
+            if status not in TurnCompletionStatus:
+                raise ValueError("turn completion requires a canonical status")
+
     def to_dict(self) -> dict[str, Any]:
         """Stable JSON-serialisable dict for persistence and tests."""
         d: dict[str, Any] = {}
@@ -274,22 +290,6 @@ class ConversationSnapshot:
                         "activation requires confirmed evidence for exact SKILL.md"
                     )
                 activations[event.event_id] = (event.sequence, path)
-            elif event.event_type == EventType.SKILL_ACTIVATION_FAILED:
-                path = event.payload.get("path")
-                reason = event.payload.get("reason")
-                if (
-                    event.evidence.quality != EvidenceQuality.CONFIRMED
-                    or not is_exact_skill_manifest(path)
-                ):
-                    raise ValueError(
-                        "activation failure requires confirmed exact SKILL.md"
-                    )
-                if reason not in ActivationFailureReason:
-                    raise ValueError("activation failure requires a canonical reason")
-            elif event.event_type == EventType.TURN_COMPLETED:
-                status = event.payload.get("status")
-                if status not in TurnCompletionStatus:
-                    raise ValueError("turn completion requires a canonical status")
             elif event.event_type == EventType.SKILL_RESOURCE_READ:
                 parent_id = event.payload.get("parent_activation_id")
                 if (

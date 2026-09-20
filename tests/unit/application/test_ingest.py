@@ -12,8 +12,11 @@ from skillscope.application.ports import (
 )
 from skillscope.domain.models import (
     CONTRACT_VERSION,
+    CanonicalEvent,
     ConversationSnapshot,
     EligibilityVerdict,
+    EventType,
+    Evidence,
     IngestEligibility,
     ReadinessBasis,
     SourceRevision,
@@ -117,3 +120,72 @@ def test_ingest_when_adapter_fails_redacts_internal_error_details() -> None:
 
     assert result.failed == 1
     assert result.errors == ["ready: ingestion_failed"]
+
+
+class EffectivenessPlugin(FakePlugin):
+    def discover(self, context: DiscoveryContext) -> list[ConversationRef]:
+        return [ConversationRef(self.id, "ready")]
+
+    def snapshot(
+        self,
+        conversation: ConversationRef,
+        *,
+        context: DiscoveryContext,
+    ) -> ConversationSnapshot:
+        return ConversationSnapshot(
+            contract_version=CONTRACT_VERSION,
+            harness_id=self.id,
+            native_conversation_id=conversation.native_conversation_id,
+            source_revision=SourceRevision("revision-1", NOW),
+            readiness_basis=ReadinessBasis.NATIVE_END,
+            events=(
+                CanonicalEvent(
+                    contract_version=CONTRACT_VERSION,
+                    event_id="fail-1",
+                    event_type=EventType.SKILL_ACTIVATION_FAILED,
+                    harness_id=self.id,
+                    native_conversation_id=conversation.native_conversation_id,
+                    sequence=1,
+                    evidence=Evidence(
+                        source_kind="hook",
+                        native_event_kind="read_failed",
+                    ),
+                    payload={
+                        "path": "/skills/testing/SKILL.md",
+                        "reason": "failed",
+                    },
+                ),
+                CanonicalEvent(
+                    contract_version=CONTRACT_VERSION,
+                    event_id="turn-1",
+                    event_type=EventType.TURN_COMPLETED,
+                    harness_id=self.id,
+                    native_conversation_id=conversation.native_conversation_id,
+                    sequence=2,
+                    evidence=Evidence(
+                        source_kind="transcript",
+                        native_event_kind="turn_ended",
+                    ),
+                    payload={"status": "error"},
+                ),
+            ),
+        )
+
+
+def test_ingest_when_snapshot_has_effectiveness_events_persists_them() -> None:
+    writer = FakeWriter()
+    operation = IngestConversations(
+        plugin=EffectivenessPlugin(),
+        writer=writer,
+        metadata_writer=writer,
+    )
+    context = DiscoveryContext(home=Path("/home/test"), user_data=Path("/data"))
+
+    result = operation(context=context, now=NOW)
+
+    assert result.inserted == 1
+    events = writer.snapshots[0].events
+    assert [event.event_type for event in events] == [
+        EventType.SKILL_ACTIVATION_FAILED,
+        EventType.TURN_COMPLETED,
+    ]
